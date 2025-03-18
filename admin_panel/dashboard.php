@@ -1345,30 +1345,49 @@ try {
             border: none;
         }
 
-        .tabs {
+        /* Нові стилі для вкладок налаштувань */
+        .settings-tabs {
             display: flex;
+            background-color: var(--card-bg);
             border-bottom: 1px solid var(--border-color);
             margin-bottom: 20px;
+            overflow-x: auto; /* для мобільних пристроїв */
         }
 
-        .tab {
-            padding: 10px 20px;
+        .settings-tabs .tab {
+            padding: 12px 20px;
             cursor: pointer;
+            transition: background-color 0.2s;
             border-bottom: 2px solid transparent;
+            white-space: nowrap;
         }
 
-        .tab.active {
+        .settings-tabs .tab:hover {
+            background-color: rgba(0,0,0,0.03);
+        }
+
+        .settings-tabs .tab.active {
             border-bottom-color: var(--primary-color);
             color: var(--primary-color);
             font-weight: 600;
         }
 
-        .tab-content {
+        .settings-content-wrapper {
+            padding: 15px 0;
+        }
+
+        .settings-tab-content {
             display: none;
         }
 
-        .tab-content.active {
+        .settings-tab-content.active {
             display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .view-more-btn {
@@ -1545,65 +1564,75 @@ try {
             .search-bar {
                 max-width: none;
             }
+
+            .settings-tabs {
+                flex-wrap: nowrap;
+                padding-bottom: 5px;
+            }
+
+            .settings-tabs .tab {
+                padding: 10px 15px;
+                font-size: 14px;
+            }
         }
     </style>
 </head>
 <body>
-    <!-- Сайдбар -->
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <div class="logo">
-                <span class="logo-text">Сервісний центр</span>
-            </div>
-            <button class="toggle-sidebar" id="toggle-sidebar">
-                <i class="fas fa-bars"></i>
-            </button>
+<!-- Сайдбар -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="logo">
+            <span class="logo-text">Сервісний центр</span>
         </div>
-
-        <div class="user-info">
-            <div class="user-avatar">
-                <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
-                    <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю">
-                <?php else: ?>
-                    <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням">
-                <?php endif; ?>
-            </div>
-            <div class="user-name"><?= htmlspecialchars($username) ?></div>
-        </div>
-
-        <ul class="sidebar-menu">
-            <li>
-                <a href="#dashboard" class="active" data-tab="dashboard">
-                    <i class="fas fa-home icon"></i>
-                    <span class="menu-text">Головна</span>
-                </a>
-            </li>
-            <li>
-                <a href="#orders" data-tab="orders">
-                    <i class="fas fa-list-alt icon"></i>
-                    <span class="menu-text">Мої замовлення</span>
-                </a>
-            </li>
-            <li>
-                <a href="#new-order" data-tab="new-order">
-                    <i class="fas fa-plus icon"></i>
-                    <span class="menu-text">Створити замовлення</span>
-                </a>
-            </li>
-            <li>
-                <a href="#settings" data-tab="settings">
-                    <i class="fas fa-cog icon"></i>
-                    <span class="menu-text">Налаштування</span>
-                </a>
-            </li>
-            <li>
-                <a href="../logout.php">
-                    <i class="fas fa-sign-out-alt icon"></i>
-                    <span class="menu-text">Вийти</span>
-                </a>
-            </li>
-        </ul>
+        <button class="toggle-sidebar" id="toggle-sidebar">
+            <i class="fas fa-bars"></i>
+        </button>
     </div>
+
+    <div class="user-info">
+        <div class="user-avatar">
+            <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
+                <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю">
+            <?php else: ?>
+                <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням">
+            <?php endif; ?>
+        </div>
+        <div class="user-name"><?= htmlspecialchars($username) ?></div>
+    </div>
+
+    <ul class="sidebar-menu">
+        <li>
+            <a href="#dashboard" class="active" data-tab="dashboard">
+                <i class="fas fa-home icon"></i>
+                <span class="menu-text">Головна</span>
+            </a>
+        </li>
+        <li>
+            <a href="#orders" data-tab="orders">
+                <i class="fas fa-list-alt icon"></i>
+                <span class="menu-text">Мої замовлення</span>
+            </a>
+        </li>
+        <li>
+            <a href="#new-order" data-tab="new-order">
+                <i class="fas fa-plus icon"></i>
+                <span class="menu-text">Створити замовлення</span>
+            </a>
+        </li>
+        <li>
+            <a href="#settings" data-tab="settings">
+                <i class="fas fa-cog icon"></i>
+                <span class="menu-text">Налаштування</span>
+            </a>
+        </li>
+        <li>
+            <a href="../logout.php">
+                <i class="fas fa-sign-out-alt icon"></i>
+                <span class="menu-text">Вийти</span>
+            </a>
+        </li>
+    </ul>
+</div>
 
     <!-- Основний контент -->
 <div class="main-content">
@@ -1624,17 +1653,17 @@ try {
     </div>
 <?php endif; ?>
 
-    <?php if ($success): ?>
-        <div class="alert alert-success">
-            <?= htmlspecialchars($success) ?>
-        </div>
-    <?php endif; ?>
+<?php if ($success): ?>
+    <div class="alert alert-success">
+        <?= htmlspecialchars($success) ?>
+    </div>
+<?php endif; ?>
 
-    <?php if ($error): ?>
-        <div class="alert alert-error">
-            <?= htmlspecialchars($error) ?>
-        </div>
-    <?php endif; ?>
+<?php if ($error): ?>
+    <div class="alert alert-error">
+        <?= htmlspecialchars($error) ?>
+    </div>
+<?php endif; ?>
 
     <!-- Контент вкладок -->
     <div class="tab-content active" id="dashboard-content">
@@ -1662,15 +1691,15 @@ try {
                         <div class="order-header">
                             <h3 class="order-id">Замовлення #<?= $order['id'] ?></h3>
                             <div class="order-meta">
-                        <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
-                            <?= htmlspecialchars($order['status']) ?>
-                        </span>
-                                <span class="order-date">
-                            <i class="far fa-calendar-alt"></i>
-                            <span class="local-time" data-utc="<?= $order['created_at'] ?>">
-                                <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
+                            <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
+                                <?= htmlspecialchars($order['status']) ?>
                             </span>
-                        </span>
+                                <span class="order-date">
+                                <i class="far fa-calendar-alt"></i>
+                                <span class="local-time" data-utc="<?= $order['created_at'] ?>">
+                                    <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
+                                </span>
+                            </span>
                             </div>
                         </div>
                         <div class="order-body">
@@ -1727,8 +1756,8 @@ try {
                                             <div class="comment-header">
                                                 <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
                                                 <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
-                                            <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
-                                        </span>
+                                                <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
+                                            </span>
                                             </div>
                                             <div class="comment-body">
                                                 <?= nl2br(htmlspecialchars($comment['content'])) ?>
@@ -1773,175 +1802,175 @@ try {
     </div>
 
     <div class="tab-content" id="orders-content">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">Мої замовлення</h2>
+    <div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Мої замовлення</h2>
+    </div>
+
+    <div class="filters-bar">
+        <form action="" method="get" class="filter-form" id="filter-form">
+            <div class="filter-group">
+                <select name="status" class="form-control">
+                    <option value="">Всі статуси</option>
+                    <?php foreach ($statuses as $status): ?>
+                        <option value="<?= htmlspecialchars($status) ?>" <?= $filter_status === $status ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($status) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+
+                <select name="service" class="form-control">
+                    <option value="">Всі послуги</option>
+                    <?php foreach ($services as $service): ?>
+                        <option value="<?= htmlspecialchars($service) ?>" <?= $filter_service === $service ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($service) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+
+                <div class="search-bar">
+                    <input type="text" name="search" class="form-control" placeholder="Пошук замовлень..." value="<?= htmlspecialchars($search_query) ?>">
+                </div>
+
+                <button type="submit" class="btn">
+                    <i class="fas fa-filter"></i> Фільтрувати
+                </button>
             </div>
+        </form>
+    </div>
 
-            <div class="filters-bar">
-                <form action="" method="get" class="filter-form" id="filter-form">
-                    <div class="filter-group">
-                        <select name="status" class="form-control">
-                            <option value="">Всі статуси</option>
-                            <?php foreach ($statuses as $status): ?>
-                                <option value="<?= htmlspecialchars($status) ?>" <?= $filter_status === $status ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($status) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-
-                        <select name="service" class="form-control">
-                            <option value="">Всі послуги</option>
-                            <?php foreach ($services as $service): ?>
-                                <option value="<?= htmlspecialchars($service) ?>" <?= $filter_service === $service ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($service) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-
-                        <div class="search-bar">
-                            <input type="text" name="search" class="form-control" placeholder="Пошук замовлень..." value="<?= htmlspecialchars($search_query) ?>">
-                        </div>
-
-                        <button type="submit" class="btn">
-                            <i class="fas fa-filter"></i> Фільтрувати
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <?php if (!empty($orders)): ?>
-            <div class="orders-list">
-                <?php foreach ($orders as $order): ?>
-                <div class="order-card">
-                    <div class="order-header">
-                        <h3 class="order-id">Замовлення #<?= $order['id'] ?></h3>
-                        <div class="order-meta">
-                                    <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
-                                        <?= htmlspecialchars($order['status']) ?>
-                                    </span>
-                            <span class="order-date">
-                                        <i class="far fa-calendar-alt"></i>
-                                        <span class="local-time" data-utc="<?= $order['created_at'] ?>">
-                                            <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
+<?php if (!empty($orders)): ?>
+    <div class="orders-list">
+    <?php foreach ($orders as $order): ?>
+        <div class="order-card">
+        <div class="order-header">
+            <h3 class="order-id">Замовлення #<?= $order['id'] ?></h3>
+            <div class="order-meta">
+                                        <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
+                                            <?= htmlspecialchars($order['status']) ?>
                                         </span>
-                                    </span>
-                        </div>
-                    </div>
-                    <div class="order-body">
-                        <div class="order-detail">
-                            <div class="order-detail-label">Послуга:</div>
-                            <div><?= htmlspecialchars($order['service']) ?></div>
-                        </div>
-                        <div class="order-detail">
-                            <div class="order-detail-label">Тип пристрою:</div>
-                            <div><?= htmlspecialchars($order['device_type']) ?></div>
-                        </div>
-                        <div class="order-detail">
-                            <div class="order-detail-label">Деталі:</div>
-                            <div><?= nl2br(htmlspecialchars($order['details'])) ?></div>
-                        </div>
-                        <div class="order-detail">
-                            <div class="order-detail-label">Контактний телефон:</div>
-                            <div><?= htmlspecialchars($order['phone']) ?></div>
-                        </div>
-                        <?php if (!empty($order['address'])): ?>
-                            <div class="order-detail">
-                                <div class="order-detail-label">Адреса:</div>
-                                <div><?= htmlspecialchars($order['address']) ?></div>
-                            </div>
-                        <?php endif; ?>
-                        <?php if (!empty($order['delivery_method'])): ?>
-                            <div class="order-detail">
-                                <div class="order-detail-label">Спосіб доставки:</div>
-                                <div><?= htmlspecialchars($order['delivery_method']) ?></div>
-                            </div>
-                        <?php endif; ?>
+                <span class="order-date">
+                                            <i class="far fa-calendar-alt"></i>
+                                            <span class="local-time" data-utc="<?= $order['created_at'] ?>">
+                                                <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
+                                            </span>
+                                        </span>
+            </div>
+        </div>
+        <div class="order-body">
+        <div class="order-detail">
+            <div class="order-detail-label">Послуга:</div>
+            <div><?= htmlspecialchars($order['service']) ?></div>
+        </div>
+        <div class="order-detail">
+            <div class="order-detail-label">Тип пристрою:</div>
+            <div><?= htmlspecialchars($order['device_type']) ?></div>
+        </div>
+        <div class="order-detail">
+            <div class="order-detail-label">Деталі:</div>
+            <div><?= nl2br(htmlspecialchars($order['details'])) ?></div>
+        </div>
+        <div class="order-detail">
+            <div class="order-detail-label">Контактний телефон:</div>
+            <div><?= htmlspecialchars($order['phone']) ?></div>
+        </div>
+        <?php if (!empty($order['address'])): ?>
+            <div class="order-detail">
+                <div class="order-detail-label">Адреса:</div>
+                <div><?= htmlspecialchars($order['address']) ?></div>
+            </div>
+        <?php endif; ?>
+        <?php if (!empty($order['delivery_method'])): ?>
+            <div class="order-detail">
+                <div class="order-detail-label">Спосіб доставки:</div>
+                <div><?= htmlspecialchars($order['delivery_method']) ?></div>
+            </div>
+        <?php endif; ?>
 
-                        <?php if (!empty($order['files'])): ?>
-                            <div class="order-files">
-                                <div class="order-detail-label">Файли:</div>
-                                <div class="file-list">
-                                    <?php foreach ($order['files'] as $file): ?>
-                                        <div class="file-item">
-                                            <?php
-                                            $ext = pathinfo($file['file_name'], PATHINFO_EXTENSION);
-                                            $icon = 'fa-file';
-                                            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
-                                                $icon = 'fa-file-image';
-                                            } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
-                                                $icon = 'fa-file-video';
-                                            } elseif (in_array($ext, ['pdf'])) {
-                                                $icon = 'fa-file-pdf';
-                                            } elseif (in_array($ext, ['doc', 'docx'])) {
-                                                $icon = 'fa-file-word';
-                                            } elseif (in_array($ext, ['txt'])) {
-                                                $icon = 'fa-file-alt';
-                                            }
-                                            ?>
-                                            <i class="fas <?= $icon ?> file-icon"></i>
-                                            <span class="file-name"><?= htmlspecialchars($file['file_name']) ?></span>
-                                            <button class="btn btn-sm view-file" data-path="../<?= htmlspecialchars($file['file_path']) ?>" data-filename="<?= htmlspecialchars($file['file_name']) ?>">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
+        <?php if (!empty($order['files'])): ?>
+            <div class="order-files">
+            <div class="order-detail-label">Файли:</div>
+            <div class="file-list">
+            <?php foreach ($order['files'] as $file): ?>
+                <div class="file-item">
+                <?php
+                $ext = pathinfo($file['file_name'], PATHINFO_EXTENSION);
+                $icon = 'fa-file';
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
+                    $icon = 'fa-file-image';
+                } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
+                    $icon = 'fa-file-video';
+                } elseif (in_array($ext, ['pdf'])) {
+                    $icon = 'fa-file-pdf';
+                } elseif (in_array($ext, ['doc', 'docx'])) {
+                    $icon = 'fa-file-word';
+                } elseif (in_array($ext, ['txt'])) {
+                    $icon = 'fa-file-alt';
+                }
+                ?>
+                    <i class="fas <?= $icon ?> file-icon"></i>
+                    <span class="file-name"><?= htmlspecialchars($file['file_name']) ?></span>
+                    <button class="btn btn-sm view-file" data-path="../<?= htmlspecialchars($file['file_path']) ?>" data-filename="<?= htmlspecialchars($file['file_name']) ?>">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+            <?php endforeach; ?>
+            </div>
+            </div>
+        <?php endif; ?>
 
-                        <?php if (!empty($order['comments'])): ?>
-                            <div class="comments-section">
-                                <div class="order-detail-label">Коментарі адміністратора:</div>
-                                <?php foreach ($order['comments'] as $comment): ?>
-                                    <div class="comment">
-                                        <div class="comment-header">
-                                            <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
-                                            <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
-                                                        <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
-                                                    </span>
-                                        </div>
-                                        <div class="comment-body">
-                                            <?= nl2br(htmlspecialchars($comment['content'])) ?>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
+            <?php if (!empty($order['comments'])): ?>
+                <div class="comments-section">
+                    <div class="order-detail-label">Коментарі адміністратора:</div>
+                    <?php foreach ($order['comments'] as $comment): ?>
+                        <div class="comment">
+                            <div class="comment-header">
+                                <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
+                                <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
+                                                            <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
+                                                        </span>
                             </div>
-                        <?php endif; ?>
+                            <div class="comment-body">
+                                <?= nl2br(htmlspecialchars($comment['content'])) ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
 
-                        <?php if ($order['user_comment']): ?>
-                            <div class="user-comment-section">
-                                <div class="order-detail-label">Ваш коментар:</div>
-                                <div class="comment">
-                                    <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
-
-                        <?php if (!$order['is_closed'] && !$block_message): ?>
-                            <div class="order-actions">
-                                <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
-                                    <i class="fas fa-edit"></i> Редагувати
-                                </button>
-                                <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
-                                    <i class="fas fa-comment"></i> Додати коментар
-                                </button>
-                            </div>
-                        <?php elseif ($order['is_closed']): ?>
-                            <div class="order-closed-notice">
-                                <em>Замовлення завершено, редагування недоступне</em>
-                            </div>
-                        <?php endif; ?>
+            <?php if ($order['user_comment']): ?>
+                <div class="user-comment-section">
+                    <div class="order-detail-label">Ваш коментар:</div>
+                    <div class="comment">
+                        <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
                     </div>
                 </div>
-                <?php endforeach; ?>
-            </div>
-            <?php else: ?>
-                <p>Замовлення не знайдені.</p>
+            <?php endif; ?>
+
+            <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
+
+            <?php if (!$order['is_closed'] && !$block_message): ?>
+                <div class="order-actions">
+                    <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
+                        <i class="fas fa-edit"></i> Редагувати
+                    </button>
+                    <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
+                        <i class="fas fa-comment"></i> Додати коментар
+                    </button>
+                </div>
+            <?php elseif ($order['is_closed']): ?>
+                <div class="order-closed-notice">
+                    <em>Замовлення завершено, редагування недоступне</em>
+                </div>
             <?php endif; ?>
         </div>
+        </div>
+    <?php endforeach; ?>
+    </div>
+<?php else: ?>
+    <p>Замовлення не знайдені.</p>
+<?php endif; ?>
+    </div>
     </div>
 
     <div class="tab-content" id="new-order-content">
@@ -2091,311 +2120,315 @@ try {
                 <h2 class="card-title">Налаштування профілю</h2>
             </div>
 
-            <div class="tabs">
+            <!-- Оновлені вкладки налаштувань -->
+            <div class="settings-tabs">
                 <div class="tab active" data-target="profile-info">Особиста інформація</div>
                 <div class="tab" data-target="change-email">Зміна email</div>
                 <div class="tab" data-target="change-username">Зміна логіну</div>
                 <div class="tab" data-target="change-password">Зміна пароля</div>
             </div>
 
-            <div class="tab-content active" id="profile-info-content">
-                <form method="post" enctype="multipart/form-data" class="profile-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="update_profile" value="1">
+            <div class="settings-content-wrapper">
+                <div class="settings-tab-content active" id="profile-info-content">
+                    <form method="post" enctype="multipart/form-data" class="profile-form">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <input type="hidden" name="update_profile" value="1">
 
-                    <div class="form-group">
-                        <label>Фото профілю:</label>
-                        <div class="profile-pic-container">
-                            <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
-                                <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю" class="profile-preview" style="max-width: 150px; border-radius: 5px;">
-                            <?php else: ?>
-                                <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням" class="profile-preview" style="max-width: 150px; border-radius: 5px;">
-                            <?php endif; ?>
+                        <div class="form-group">
+                            <label>Фото профілю:</label>
+                            <div class="profile-pic-container">
+                                <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
+                                    <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю" class="profile-preview" style="max-width: 150px; border-radius: 5px;">
+                                <?php else: ?>
+                                    <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням" class="profile-preview" style="max-width: 150px; border-radius: 5px;">
+                                <?php endif; ?>
+                            </div>
+
+                            <form method="post" enctype="multipart/form-data" class="profile-pic-form">
+                                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                                <input type="hidden" name="update_profile_pic" value="1">
+                                <div class="form-group">
+                                    <!-- Drag & Drop для фото профілю -->
+                                    <div class="drop-zone" id="profile-drop-zone">
+                                        <div class="drop-zone-prompt">
+                                            <p>Перетягніть фото сюди або натисніть для вибору файлу</p>
+                                        </div>
+                                        <input type="file" name="profile_pic" id="profile_pic" class="form-control" accept="image/*" hidden>
+                                    </div>
+                                    <small>Максимальний розмір: 2 МБ. Формати: jpg, jpeg, png, gif</small>
+                                </div>
+                                <button type="submit" class="btn">Оновити фото</button>
+                            </form>
                         </div>
 
-                        <form method="post" enctype="multipart/form-data" class="profile-pic-form">
-                            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                            <input type="hidden" name="update_profile_pic" value="1">
-                            <div class="form-group">
-                                <!-- Drag & Drop для фото профілю -->
-                                <div class="drop-zone" id="profile-drop-zone">
-                                    <div class="drop-zone-prompt">
-                                        <p>Перетягніть фото сюди або натисніть для вибору файлу</p>
-                                    </div>
-                                    <input type="file" name="profile_pic" id="profile_pic" class="form-control" accept="image/*" hidden>
-                                </div>
-                                <small>Максимальний розмір: 2 МБ. Формати: jpg, jpeg, png, gif</small>
-                            </div>
-                            <button type="submit" class="btn">Оновити фото</button>
-                        </form>
-                    </div>
+                        <div class="form-group">
+                            <label for="first_name">Ім'я:</label>
+                            <input type="text" name="first_name" id="first_name" class="form-control" value="<?= htmlspecialchars($user_data['first_name'] ?? '') ?>">
+                        </div>
 
-                    <div class="form-group">
-                        <label for="first_name">Ім'я:</label>
-                        <input type="text" name="first_name" id="first_name" class="form-control" value="<?= htmlspecialchars($user_data['first_name'] ?? '') ?>">
-                    </div>
+                        <div class="form-group">
+                            <label for="last_name">Прізвище:</label>
+                            <input type="text" name="last_name" id="last_name" class="form-control" value="<?= htmlspecialchars($user_data['last_name'] ?? '') ?>">
+                        </div>
 
-                    <div class="form-group">
-                        <label for="last_name">Прізвище:</label>
-                        <input type="text" name="last_name" id="last_name" class="form-control" value="<?= htmlspecialchars($user_data['last_name'] ?? '') ?>">
-                    </div>
+                        <div class="form-group">
+                            <label for="middle_name">По батькові:</label>
+                            <input type="text" name="middle_name" id="middle_name" class="form-control" value="<?= htmlspecialchars($user_data['middle_name'] ?? '') ?>">
+                        </div>
 
-                    <div class="form-group">
-                        <label for="middle_name">По батькові:</label>
-                        <input type="text" name="middle_name" id="middle_name" class="form-control" value="<?= htmlspecialchars($user_data['middle_name'] ?? '') ?>">
-                    </div>
+                        <button type="submit" class="btn">Зберегти зміни</button>
+                    </form>
+                </div>
 
-                    <button type="submit" class="btn">Зберегти зміни</button>
-                </form>
-            </div>
+                <div class="settings-tab-content" id="change-email-content">
+                    <form method="post" class="email-form">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <input type="hidden" name="update_email" value="1">
 
-            <div class="tab-content" id="change-email-content">
-                <form method="post" class="email-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="update_email" value="1">
+                        <div class="form-group">
+                            <label for="current_email">Поточний email:</label>
+                            <input type="email" id="current_email" class="form-control" value="<?= htmlspecialchars($user_data['email']) ?>" readonly>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="current_email">Поточний email:</label>
-                        <input type="email" id="current_email" class="form-control" value="<?= htmlspecialchars($user_data['email']) ?>" readonly>
-                    </div>
+                        <div class="form-group">
+                            <label for="new_email">Новий email:</label>
+                            <input type="email" name="new_email" id="new_email" class="form-control" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="new_email">Новий email:</label>
-                        <input type="email" name="new_email" id="new_email" class="form-control" required>
-                    </div>
+                        <div class="form-group">
+                            <label for="email_password">Введіть пароль для підтвердження:</label>
+                            <input type="password" name="password" id="email_password" class="form-control" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="email_password">Введіть пароль для підтвердження:</label>
-                        <input type="password" name="password" id="email_password" class="form-control" required>
-                    </div>
+                        <button type="submit" class="btn">Змінити email</button>
+                    </form>
+                </div>
 
-                    <button type="submit" class="btn">Змінити email</button>
-                </form>
-            </div>
+                <div class="settings-tab-content" id="change-username-content">
+                    <form method="post" class="username-form">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <input type="hidden" name="update_username" value="1">
 
-            <div class="tab-content" id="change-username-content">
-                <form method="post" class="username-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="update_username" value="1">
+                        <div class="form-group">
+                            <label for="current_username">Поточний логін:</label>
+                            <input type="text" id="current_username" class="form-control" value="<?= htmlspecialchars($username) ?>" readonly>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="current_username">Поточний логін:</label>
-                        <input type="text" id="current_username" class="form-control" value="<?= htmlspecialchars($username) ?>" readonly>
-                    </div>
+                        <div class="form-group">
+                            <label for="new_username">Новий логін:</label>
+                            <input type="text" name="new_username" id="new_username" class="form-control" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="new_username">Новий логін:</label>
-                        <input type="text" name="new_username" id="new_username" class="form-control" required>
-                    </div>
+                        <div class="form-group">
+                            <label for="username_password">Введіть пароль для підтвердження:</label>
+                            <input type="password" name="password" id="username_password" class="form-control" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="username_password">Введіть пароль для підтвердження:</label>
-                        <input type="password" name="password" id="username_password" class="form-control" required>
-                    </div>
+                        <button type="submit" class="btn">Змінити логін</button>
+                    </form>
+                </div>
 
-                    <button type="submit" class="btn">Змінити логін</button>
-                </form>
-            </div>
+                <div class="settings-tab-content" id="change-password-content">
+                    <form method="post" class="password-form">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <input type="hidden" name="update_password" value="1">
 
-            <div class="tab-content" id="change-password-content">
-                <form method="post" class="password-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="update_password" value="1">
+                        <div class="form-group">
+                            <label for="current_password">Поточний пароль:</label>
+                            <input type="password" name="current_password" id="current_password" class="form-control" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="current_password">Поточний пароль:</label>
-                        <input type="password" name="current_password" id="current_password" class="form-control" required>
-                    </div>
+                        <div class="form-group">
+                            <label for="new_password">Новий пароль:</label>
+                            <input type="password" name="new_password" id="new_password" class="form-control" required>
+                            <small>Мінімум 8 символів</small>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="new_password">Новий пароль:</label>
-                        <input type="password" name="new_password" id="new_password" class="form-control" required>
-                        <small>Мінімум 8 символів</small>
-                    </div>
+                        <div class="form-group">
+                            <label for="confirm_password">Підтвердження нового пароля:</label>
+                            <input type="password" name="confirm_password" id="confirm_password" class="form-control" required>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="confirm_password">Підтвердження нового пароля:</label>
-                        <input type="password" name="confirm_password" id="confirm_password" class="form-control" required>
-                    </div>
-
-                    <button type="submit" class="btn">Змінити пароль</button>
-                </form>
+                        <button type="submit" class="btn">Змінити пароль</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-    <!-- Модальне вікно для перегляду файлів -->
-    <div class="modal" id="file-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title" id="file-modal-title">Перегляд файлу</h3>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body" id="file-modal-body">
-                <!-- Вміст буде додано через JavaScript -->
-            </div>
+<!-- Модальне вікно для перегляду файлів -->
+<div class="modal" id="file-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="file-modal-title">Перегляд файлу</h3>
+            <button class="close-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="file-modal-body">
+            <!-- Вміст буде додано через JavaScript -->
         </div>
     </div>
+</div>
 
-    <!-- Модальне вікно для редагування замовлення -->
-    <div class="modal" id="edit-order-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Редагування замовлення</h3>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form method="post" enctype="multipart/form-data" id="edit-order-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="edit_order" value="1">
-                    <input type="hidden" name="order_id" id="edit-order-id">
-                    <input type="hidden" name="dropped_files" id="edit-dropped-files-data" value="">
+<!-- Модальне вікно для редагування замовлення -->
+<div class="modal" id="edit-order-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Редагування замовлення</h3>
+            <button class="close-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form method="post" enctype="multipart/form-data" id="edit-order-form">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                <input type="hidden" name="edit_order" value="1">
+                <input type="hidden" name="order_id" id="edit-order-id">
+                <input type="hidden" name="dropped_files" id="edit-dropped-files-data" value="">
 
-                    <div class="form-group">
-                        <label for="edit-service">Послуга*:</label>
-                        <select name="service" id="edit-service" class="form-control" required>
-                            <option value="Ремонт комп'ютера">Ремонт комп'ютера</option>
-                            <option value="Ремонт ноутбука">Ремонт ноутбука</option>
-                            <option value="Ремонт телефона">Ремонт телефона</option>
-                            <option value="Ремонт МФУ">Ремонт МФУ</option>
-                            <option value="Заправка картриджів">Заправка картриджів</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label for="edit-service">Послуга*:</label>
+                    <select name="service" id="edit-service" class="form-control" required>
+                        <option value="Ремонт комп'ютера">Ремонт комп'ютера</option>
+                        <option value="Ремонт ноутбука">Ремонт ноутбука</option>
+                        <option value="Ремонт телефона">Ремонт телефона</option>
+                        <option value="Ремонт МФУ">Ремонт МФУ</option>
+                        <option value="Заправка картриджів">Заправка картриджів</option>
+                    </select>
+                </div>
 
-                    <div class="form-group">
-                        <label for="edit-device-type">Тип пристрою*:</label>
-                        <select name="device_type" id="edit-device-type" class="form-control" required>
-                            <option value="Комп'ютер">Комп'ютер</option>
-                            <option value="Ноутбук">Ноутбук</option>
-                            <option value="Телефон сенсорний">Телефон сенсорний</option>
-                            <option value="Телефон кнопковий">Телефон кнопковий</option>
-                            <option value="МФУ">МФУ</option>
-                            <option value="Принтер">Принтер</option>
-                            <option value="Інше">Інше</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label for="edit-device-type">Тип пристрою*:</label>
+                    <select name="device_type" id="edit-device-type" class="form-control" required>
+                        <option value="Комп'ютер">Комп'ютер</option>
+                        <option value="Ноутбук">Ноутбук</option>
+                        <option value="Телефон сенсорний">Телефон сенсорний</option>
+                        <option value="Телефон кнопковий">Телефон кнопковий</option>
+                        <option value="МФУ">МФУ</option>
+                        <option value="Принтер">Принтер</option>
+                        <option value="Інше">Інше</option>
+                    </select>
+                </div>
 
-                    <div class="form-group">
-                        <label for="edit-details">Деталі замовлення*:</label>
-                        <textarea name="details" id="edit-details" class="form-control" rows="5" required></textarea>
-                    </div>
+                <div class="form-group">
+                    <label for="edit-details">Деталі замовлення*:</label>
+                    <textarea name="details" id="edit-details" class="form-control" rows="5" required></textarea>
+                </div>
 
-                    <div class="form-group">
-                        <label for="edit-phone">Контактний телефон*:</label>
-                        <input type="tel" name="phone" id="edit-phone" class="form-control" required>
-                    </div>
+                <div class="form-group">
+                    <label for="edit-phone">Контактний телефон*:</label>
+                    <input type="tel" name="phone" id="edit-phone" class="form-control" required>
+                </div>
 
-                    <div class="form-group">
-                        <label for="edit-address">Адреса:</label>
-                        <textarea name="address" id="edit-address" class="form-control" rows="2"></textarea>
-                    </div>
+                <div class="form-group">
+                    <label for="edit-address">Адреса:</label>
+                    <textarea name="address" id="edit-address" class="form-control" rows="2"></textarea>
+                </div>
 
-                    <div class="form-group">
-                        <label for="edit-delivery-method">Спосіб доставки:</label>
-                        <select name="delivery_method" id="edit-delivery-method" class="form-control">
-                            <option value="">Виберіть спосіб доставки</option>
-                            <option value="Самовивіз">Самовивіз</option>
-                            <option value="Кур'єр">Кур'єр</option>
-                            <option value="Нова пошта">Нова пошта</option>
-                            <option value="Укрпошта">Укрпошта</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label for="edit-delivery-method">Спосіб доставки:</label>
+                    <select name="delivery_method" id="edit-delivery-method" class="form-control">
+                        <option value="">Виберіть спосіб доставки</option>
+                        <option value="Самовивіз">Самовивіз</option>
+                        <option value="Кур'єр">Кур'єр</option>
+                        <option value="Нова пошта">Нова пошта</option>
+                        <option value="Укрпошта">Укрпошта</option>
+                    </select>
+                </div>
 
-                    <div class="form-group">
-                        <label for="edit-user-comment">Ваш коментар:</label>
-                        <textarea name="user_comment" id="edit-user-comment" class="form-control" rows="3"></textarea>
-                    </div>
+                <div class="form-group">
+                    <label for="edit-user-comment">Ваш коментар:</label>
+                    <textarea name="user_comment" id="edit-user-comment" class="form-control" rows="3"></textarea>
+                </div>
 
-                    <div class="form-group">
-                        <label>Додати файли:</label>
-                        <!-- Drag & Drop зона для редагування -->
-                        <div class="drop-zone" id="edit-drop-zone">
-                            <div class="drop-zone-prompt">
-                                <i class="fas fa-cloud-upload-alt fa-2x"></i>
-                                <p>Перетягніть файли сюди або натисніть для вибору файлів</p>
-                            </div>
-                            <input type="file" name="order_files[]" id="edit-drop-zone-input" class="form-control" multiple hidden>
+                <div class="form-group">
+                    <label>Додати файли:</label>
+                    <!-- Drag & Drop зона для редагування -->
+                    <div class="drop-zone" id="edit-drop-zone">
+                        <div class="drop-zone-prompt">
+                            <i class="fas fa-cloud-upload-alt fa-2x"></i>
+                            <p>Перетягніть файли сюди або натисніть для вибору файлів</p>
                         </div>
-                        <div id="edit-file-preview-container"></div>
-                        <small>Максимальний розмір: 10 МБ. Дозволені формати: jpg, jpeg, png, gif, mp4, avi, mov, pdf, doc, docx, txt</small>
+                        <input type="file" name="order_files[]" id="edit-drop-zone-input" class="form-control" multiple hidden>
                     </div>
+                    <div id="edit-file-preview-container"></div>
+                    <small>Максимальний розмір: 10 МБ. Дозволені формати: jpg, jpeg, png, gif, mp4, avi, mov, pdf, doc, docx, txt</small>
+                </div>
 
-                    <div class="form-actions">
-                        <button type="submit" class="btn">
-                            <i class="fas fa-save"></i> Зберегти зміни
-                        </button>
-                    </div>
-                </form>
-            </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn">
+                        <i class="fas fa-save"></i> Зберегти зміни
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
 
-    <!-- Модальне вікно для додавання коментаря -->
-    <div class="modal" id="comment-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Додати коментар</h3>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form method="post" id="comment-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="add_comment" value="1">
-                    <input type="hidden" name="order_id" id="comment-order-id">
+<!-- Модальне вікно для додавання коментаря -->
+<div class="modal" id="comment-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Додати коментар</h3>
+            <button class="close-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form method="post" id="comment-form">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                <input type="hidden" name="add_comment" value="1">
+                <input type="hidden" name="order_id" id="comment-order-id">
 
-                    <div class="form-group">
-                        <label for="comment">Ваш коментар:</label>
-                        <textarea name="comment" id="comment" class="form-control" rows="5" required></textarea>
-                    </div>
+                <div class="form-group">
+                    <label for="comment">Ваш коментар:</label>
+                    <textarea name="comment" id="comment" class="form-control" rows="5" required></textarea>
+                </div>
 
-                    <div class="form-actions">
-                        <button type="submit" class="btn">
-                            <i class="fas fa-paper-plane"></i> Надіслати коментар
-                        </button>
-                    </div>
-                </form>
-            </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn">
+                        <i class="fas fa-paper-plane"></i> Надіслати коментар
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Поточний час
-            function updateLocalTime() {
-                const now = new Date();
-                const formattedDate = now.toLocaleDateString('uk-UA', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric'
-                });
-                const formattedTime = now.toLocaleTimeString('uk-UA', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                document.getElementById('current-time').textContent = `${formattedDate} ${formattedTime}`;
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Поточний час
+        function updateLocalTime() {
+            const now = new Date();
+            const formattedDate = now.toLocaleDateString('uk-UA', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+            const formattedTime = now.toLocaleTimeString('uk-UA', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('current-time').textContent = `${formattedDate} ${formattedTime}`;
 
-                // Оновлення часу для всіх елементів з класом local-time
-                document.querySelectorAll('.local-time').forEach(element => {
-                    const utcDate = element.getAttribute('data-utc');
-                    if (utcDate) {
-                        const localDate = new Date(utcDate);
-                        element.textContent = localDate.toLocaleDateString('uk-UA', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        });
-                    }
-                });
-            }
+            // Оновлення часу для всіх елементів з класом local-time
+            document.querySelectorAll('.local-time').forEach(element => {
+                const utcDate = element.getAttribute('data-utc');
+                if (utcDate) {
+                    const localDate = new Date(utcDate);
+                    element.textContent = localDate.toLocaleDateString('uk-UA', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                }
+            });
+        }
 
-            updateLocalTime();
-            setInterval(updateLocalTime, 60000); // Оновлювати кожну хвилину
+        updateLocalTime();
+        setInterval(updateLocalTime, 60000); // Оновлювати кожну хвилину
 
-            // Тема сайту
-            const themeToggle = document.getElementById('theme-toggle');
+        // Тема сайту
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) {
             const currentTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', currentTheme);
 
@@ -2415,11 +2448,13 @@ try {
                     this.innerHTML = '<i class="fas fa-moon"></i>';
                 }
             });
+        }
 
-            // Переключення бокової панелі
-            const toggleSidebar = document.getElementById('toggle-sidebar');
-            const sidebar = document.getElementById('sidebar');
+        // Переключення бокової панелі
+        const toggleSidebar = document.getElementById('toggle-sidebar');
+        const sidebar = document.getElementById('sidebar');
 
+        if (toggleSidebar && sidebar) {
             toggleSidebar.addEventListener('click', function() {
                 sidebar.classList.toggle('collapsed');
                 localStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed'));
@@ -2434,87 +2469,98 @@ try {
             if (window.innerWidth <= 768) {
                 sidebar.classList.add('collapsed');
             }
+        }
 
-            // Переключення між вкладками
-            document.querySelectorAll('.sidebar-menu a').forEach(link => {
-                link.addEventListener('click', function(e) {
-                    // Перевіряємо чи це не посилання на вихід
-                    if(this.getAttribute('href') === "../logout.php") {
-                        return; // Дозволяємо звичайний перехід за посиланням
-                    }
-
-                    e.preventDefault();
-                    const tabId = this.getAttribute('data-tab');
-
-                    // Видалити активний клас з усіх вкладок
-                    document.querySelectorAll('.sidebar-menu a').forEach(tab => {
-                        tab.classList.remove('active');
-                    });
-
-                    // Приховати всі контейнери контенту вкладок
-                    document.querySelectorAll('.tab-content').forEach(content => {
-                        content.classList.remove('active');
-                    });
-
-                    // Активувати вибрану вкладку та її контент
-                    this.classList.add('active');
-                    document.getElementById(tabId + '-content').classList.add('active');
-
-                    // На мобільних пристроях автоматично згортати бічну панель після вибору вкладки
-                    if (window.innerWidth <= 768) {
-                        sidebar.classList.add('collapsed');
-                    }
-
-                    // Зберегти активну вкладку в localStorage
-                    localStorage.setItem('active_tab', tabId);
-                });
-            });
-
-            // Помічання активного пункту меню при натисканні на кнопки перегляду всіх замовлень
-            document.querySelectorAll('.view-all').forEach(link => {
-                link.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const tabId = this.getAttribute('data-tab');
-
-                    // Імітуємо натискання на відповідний пункт меню
-                    document.querySelector(`.sidebar-menu a[data-tab="${tabId}"]`).click();
-                });
-            });
-
-            // Відновлення активної вкладки з localStorage
-            const activeTab = localStorage.getItem('active_tab');
-            if (activeTab) {
-                const tabLink = document.querySelector(`.sidebar-menu a[data-tab="${activeTab}"]`);
-                if (tabLink) {
-                    tabLink.click();
+        // Переключення між вкладками
+        document.querySelectorAll('.sidebar-menu a').forEach(link => {
+            link.addEventListener('click', function(e) {
+                // Перевіряємо чи це не посилання на вихід
+                if(this.getAttribute('href') === "../logout.php") {
+                    return; // Дозволяємо звичайний перехід за посиланням
                 }
-            }
 
-            // Переключення між вкладками в налаштуваннях
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.addEventListener('click', function() {
-                    const targetId = this.getAttribute('data-target');
+                e.preventDefault();
+                const tabId = this.getAttribute('data-tab');
 
-                    // Видалити активний клас з усіх вкладок
-                    document.querySelectorAll('.tab').forEach(tab => {
-                        tab.classList.remove('active');
-                    });
-
-                    // Сховати всі контейнери контенту вкладок
-                    document.querySelectorAll('#settings-content .tab-content').forEach(content => {
-                        content.classList.remove('active');
-                    });
-
-                    // Активувати вибрану вкладку та її контент
-                    this.classList.add('active');
-                    document.getElementById(targetId + '-content').classList.add('active');
+                // Видалити активний клас з усіх вкладок
+                document.querySelectorAll('.sidebar-menu a').forEach(tab => {
+                    tab.classList.remove('active');
                 });
-            });
 
-            // Згортання/розгортання секцій форми замовлення
+                // Приховати всі контейнери контенту вкладок
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+
+                // Активувати вибрану вкладку та її контент
+                this.classList.add('active');
+                document.getElementById(tabId + '-content').classList.add('active');
+
+                // На мобільних пристроях автоматично згортати бічну панель після вибору вкладки
+                if (window.innerWidth <= 768 && sidebar) {
+                    sidebar.classList.add('collapsed');
+                }
+
+                // Зберегти активну вкладку в localStorage
+                localStorage.setItem('active_tab', tabId);
+            });
+        });
+
+        // Помічання активного пункту меню при натисканні на кнопки перегляду всіх замовлень
+        document.querySelectorAll('.view-all').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const tabId = this.getAttribute('data-tab');
+
+                // Імітуємо натискання на відповідний пункт меню
+                const menuItem = document.querySelector(`.sidebar-menu a[data-tab="${tabId}"]`);
+                if (menuItem) {
+                    menuItem.click();
+                }
+            });
+        });
+
+        // Відновлення активної вкладки з localStorage
+        const activeTab = localStorage.getItem('active_tab');
+        if (activeTab) {
+            const tabLink = document.querySelector(`.sidebar-menu a[data-tab="${activeTab}"]`);
+            if (tabLink) {
+                tabLink.click();
+            }
+        }
+
+        // Переключення між вкладками в налаштуваннях
+        document.querySelectorAll('.settings-tabs .tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const targetId = this.getAttribute('data-target');
+
+                // Видалити активний клас з усіх вкладок
+                document.querySelectorAll('.settings-tabs .tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+
+                // Сховати всі контейнери контенту вкладок налаштувань
+                document.querySelectorAll('.settings-tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+
+                // Активувати вибрану вкладку та її контент
+                this.classList.add('active');
+
+                const targetContent = document.getElementById(targetId + '-content');
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+            });
+        });
+
+        // Код для згортання/розгортання секцій форми замовлення
+        document.querySelectorAll('.collapsible-header').forEach(header => {
             header.addEventListener('click', function() {
                 const section = this.closest('.collapsible-section');
-                section.classList.toggle('open');
+                if (section) {
+                    section.classList.toggle('open');
+                }
             });
         });
 
@@ -2522,11 +2568,13 @@ try {
         document.querySelectorAll('.view-more-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const orderBody = this.closest('.order-body');
-                orderBody.classList.toggle('expanded');
-                if (orderBody.classList.contains('expanded')) {
-                    this.innerHTML = 'Згорнути <i class="fas fa-chevron-up"></i>';
-                } else {
-                    this.innerHTML = 'Переглянути повну інформацію <i class="fas fa-chevron-down"></i>';
+                if (orderBody) {
+                    orderBody.classList.toggle('expanded');
+                    if (orderBody.classList.contains('expanded')) {
+                        this.innerHTML = 'Згорнути <i class="fas fa-chevron-up"></i>';
+                    } else {
+                        this.innerHTML = 'Переглянути повну інформацію <i class="fas fa-chevron-down"></i>';
+                    }
                 }
             });
         });
@@ -2539,7 +2587,9 @@ try {
         closeButtons.forEach(button => {
             button.addEventListener('click', function() {
                 const modal = this.closest('.modal');
-                modal.style.display = 'none';
+                if (modal) {
+                    modal.style.display = 'none';
+                }
             });
         });
 
@@ -2557,52 +2607,56 @@ try {
         const fileModalTitle = document.getElementById('file-modal-title');
         const fileModalBody = document.getElementById('file-modal-body');
 
-        fileButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const filePath = this.getAttribute('data-path');
-                const fileName = this.getAttribute('data-filename');
-                const fileExt = fileName.split('.').pop().toLowerCase();
+        if (fileButtons.length > 0 && fileModal && fileModalTitle && fileModalBody) {
+            fileButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const filePath = this.getAttribute('data-path');
+                    const fileName = this.getAttribute('data-filename');
+                    if (!filePath || !fileName) return;
 
-                fileModalTitle.textContent = fileName;
-                fileModalBody.innerHTML = '';
+                    const fileExt = fileName.split('.').pop().toLowerCase();
 
-                if (['jpg', 'jpeg', 'png', 'gif'].includes(fileExt)) {
-                    // Зображення
-                    const img = document.createElement('img');
-                    img.src = filePath;
-                    img.alt = fileName;
-                    img.className = 'media-viewer';
-                    fileModalBody.appendChild(img);
-                } else if (['mp4', 'mov', 'avi'].includes(fileExt)) {
-                    // Відео
-                    const video = document.createElement('video');
-                    video.src = filePath;
-                    video.controls = true;
-                    video.className = 'media-viewer';
-                    fileModalBody.appendChild(video);
-                } else if (fileExt === 'txt') {
-                    // Текстовий файл
-                    fetch(filePath)
-                        .then(response => response.text())
-                        .then(text => {
-                            const pre = document.createElement('pre');
-                            pre.className = 'file-viewer';
-                            pre.textContent = text;
-                            fileModalBody.appendChild(pre);
-                        })
-                        .catch(error => {
-                            fileModalBody.innerHTML = `<p class="error">Помилка завантаження файлу: ${error.message}</p>`;
-                        });
-                } else {
-                    // Інші типи файлів
-                    fileModalBody.innerHTML = `
+                    fileModalTitle.textContent = fileName;
+                    fileModalBody.innerHTML = '';
+
+                    if (['jpg', 'jpeg', 'png', 'gif'].includes(fileExt)) {
+                        // Зображення
+                        const img = document.createElement('img');
+                        img.src = filePath;
+                        img.alt = fileName;
+                        img.className = 'media-viewer';
+                        fileModalBody.appendChild(img);
+                    } else if (['mp4', 'mov', 'avi'].includes(fileExt)) {
+                        // Відео
+                        const video = document.createElement('video');
+                        video.src = filePath;
+                        video.controls = true;
+                        video.className = 'media-viewer';
+                        fileModalBody.appendChild(video);
+                    } else if (fileExt === 'txt') {
+                        // Текстовий файл
+                        fetch(filePath)
+                            .then(response => response.text())
+                            .then(text => {
+                                const pre = document.createElement('pre');
+                                pre.className = 'file-viewer';
+                                pre.textContent = text;
+                                fileModalBody.appendChild(pre);
+                            })
+                            .catch(error => {
+                                fileModalBody.innerHTML = `<p class="error">Помилка завантаження файлу: ${error.message}</p>`;
+                            });
+                    } else {
+                        // Інші типи файлів
+                        fileModalBody.innerHTML = `
                         <p>Неможливо переглянути файл в браузері. <a href="${filePath}" download="${fileName}">Завантажити файл</a></p>
                     `;
-                }
+                    }
 
-                fileModal.style.display = 'block';
+                    fileModal.style.display = 'block';
+                });
             });
-        });
+        }
 
         // Редагування замовлення
         const editButtons = document.querySelectorAll('.edit-order');
@@ -2610,104 +2664,129 @@ try {
         const editOrderForm = document.getElementById('edit-order-form');
         const editOrderId = document.getElementById('edit-order-id');
 
-        editButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const orderId = this.getAttribute('data-id');
-                const orderCard = this.closest('.order-card');
+        if (editButtons.length > 0 && editOrderModal && editOrderForm && editOrderId) {
+            editButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const orderId = this.getAttribute('data-id');
+                    const orderCard = this.closest('.order-card');
+                    if (!orderId || !orderCard) return;
 
-                // Перевіряємо чи замовлення не закрито
-                const orderIsClosedNotice = orderCard.querySelector('.order-closed-notice');
-                if (orderIsClosedNotice) {
-                    alert('Замовлення завершено, редагування недоступне');
-                    return;
-                }
+                    // Перевіряємо чи замовлення не закрито
+                    const orderIsClosedNotice = orderCard.querySelector('.order-closed-notice');
+                    if (orderIsClosedNotice) {
+                        alert('Замовлення завершено, редагування недоступне');
+                        return;
+                    }
 
-                // Заповнюємо форму даними замовлення
-                editOrderId.value = orderId;
+                    // Заповнюємо форму даними замовлення
+                    editOrderId.value = orderId;
 
-                const service = orderCard.querySelector('.order-body div:nth-child(1) div:last-child').textContent;
-                const deviceType = orderCard.querySelector('.order-body div:nth-child(2) div:last-child').textContent;
-                const details = orderCard.querySelector('.order-body div:nth-child(3) div:last-child').textContent;
-                const phone = orderCard.querySelector('.order-body div:nth-child(4) div:last-child')?.textContent || '';
-                const address = orderCard.querySelector('.order-body div:nth-child(5) div:last-child')?.textContent || '';
-                const deliveryMethod = orderCard.querySelector('.order-body div:nth-child(6) div:last-child')?.textContent || '';
-                const userComment = orderCard.querySelector('.user-comment-section .comment')?.textContent || '';
+                    try {
+                        const service = orderCard.querySelector('.order-body div:nth-child(1) div:last-child')?.textContent || '';
+                        const deviceType = orderCard.querySelector('.order-body div:nth-child(2) div:last-child')?.textContent || '';
+                        const details = orderCard.querySelector('.order-body div:nth-child(3) div:last-child')?.textContent || '';
+                        const phone = orderCard.querySelector('.order-body div:nth-child(4) div:last-child')?.textContent || '';
+                        const address = orderCard.querySelector('.order-body div:nth-child(5) div:last-child')?.textContent || '';
+                        const deliveryMethod = orderCard.querySelector('.order-body div:nth-child(6) div:last-child')?.textContent || '';
+                        const userComment = orderCard.querySelector('.user-comment-section .comment')?.textContent || '';
 
-                document.querySelector('#edit-service').value = service.trim();
-                document.querySelector('#edit-device-type').value = deviceType.trim();
-                document.querySelector('#edit-details').value = details.trim();
-                document.querySelector('#edit-phone').value = phone.trim();
-                document.querySelector('#edit-address').value = address.trim();
-                document.querySelector('#edit-delivery-method').value = deliveryMethod.trim();
-                document.querySelector('#edit-user-comment').value = userComment.trim();
+                        const serviceSelect = document.querySelector('#edit-service');
+                        const deviceTypeSelect = document.querySelector('#edit-device-type');
+                        const detailsTextarea = document.querySelector('#edit-details');
+                        const phoneInput = document.querySelector('#edit-phone');
+                        const addressTextarea = document.querySelector('#edit-address');
+                        const deliveryMethodSelect = document.querySelector('#edit-delivery-method');
+                        const userCommentTextarea = document.querySelector('#edit-user-comment');
 
-                // Очистимо контейнер попередньо завантажених файлів
-                document.getElementById('edit-file-preview-container').innerHTML = '';
-                document.getElementById('edit-dropped-files-data').value = '';
+                        if (serviceSelect) serviceSelect.value = service.trim();
+                        if (deviceTypeSelect) deviceTypeSelect.value = deviceType.trim();
+                        if (detailsTextarea) detailsTextarea.value = details.trim();
+                        if (phoneInput) phoneInput.value = phone.trim();
+                        if (addressTextarea) addressTextarea.value = address.trim();
+                        if (deliveryMethodSelect) deliveryMethodSelect.value = deliveryMethod.trim();
+                        if (userCommentTextarea) userCommentTextarea.value = userComment.trim();
+                    } catch (e) {
+                        console.error('Помилка заповнення форми:', e);
+                    }
 
-                editOrderModal.style.display = 'block';
+                    // Очистимо контейнер попередньо завантажених файлів
+                    const filePreviewContainer = document.getElementById('edit-file-preview-container');
+                    const droppedFilesData = document.getElementById('edit-dropped-files-data');
+
+                    if (filePreviewContainer) filePreviewContainer.innerHTML = '';
+                    if (droppedFilesData) droppedFilesData.value = '';
+
+                    editOrderModal.style.display = 'block';
+                });
             });
-        });
+        }
 
+        // Додавання коментаря
         // Додавання коментаря
         const commentButtons = document.querySelectorAll('.add-comment');
         const commentModal = document.getElementById('comment-modal');
         const commentForm = document.getElementById('comment-form');
         const commentOrderId = document.getElementById('comment-order-id');
 
-        commentButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const orderId = this.getAttribute('data-id');
-                const orderCard = this.closest('.order-card');
+        if (commentButtons.length > 0 && commentModal && commentForm && commentOrderId) {
+            commentButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const orderId = this.getAttribute('data-id');
+                    const orderCard = this.closest('.order-card');
+                    if (!orderId || !orderCard) return;
 
-                // Перевіряємо чи замовлення не закрито
-                const orderIsClosedNotice = orderCard.querySelector('.order-closed-notice');
-                if (orderIsClosedNotice) {
-                    alert('Замовлення завершено, додавання коментарів недоступне');
-                    return;
-                }
+                    // Перевіряємо чи замовлення не закрито
+                    const orderIsClosedNotice = orderCard.querySelector('.order-closed-notice');
+                    if (orderIsClosedNotice) {
+                        alert('Замовлення завершено, додавання коментарів недоступне');
+                        return;
+                    }
 
-                commentOrderId.value = orderId;
-                commentModal.style.display = 'block';
-            });
-        });
-
-        // Обробка форми коментаря з автоматичним зникненням повідомлення
-        commentForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const formData = new FormData(this);
-
-            fetch(window.location.href, {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => {
-                    commentModal.style.display = 'none';
-
-                    // Створюємо тимчасове повідомлення
-                    const tempMessage = document.createElement('div');
-                    tempMessage.className = 'temp-message';
-                    tempMessage.textContent = 'Коментар успішно додано!';
-                    document.body.appendChild(tempMessage);
-
-                    // Коментар автоматично зникає через 2 секунди
-                    setTimeout(() => {
-                        // Перезавантажуємо сторінку після зникнення повідомлення для відображення оновлених даних
-                        location.reload();
-                    }, 2000);
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Помилка при відправці коментаря. Спробуйте ще раз.');
+                    commentOrderId.value = orderId;
+                    commentModal.style.display = 'block';
                 });
-        });
+            });
+
+            // Обробка форми коментаря з автоматичним зникненням повідомлення
+            commentForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                const formData = new FormData(this);
+
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                    .then(response => {
+                        commentModal.style.display = 'none';
+
+                        // Створюємо тимчасове повідомлення
+                        const tempMessage = document.createElement('div');
+                        tempMessage.className = 'temp-message';
+                        tempMessage.textContent = 'Коментар успішно додано!';
+                        document.body.appendChild(tempMessage);
+
+                        // Коментар автоматично зникає через 2 секунди
+                        setTimeout(() => {
+                            // Перезавантажуємо сторінку після зникнення повідомлення для відображення оновлених даних
+                            location.reload();
+                        }, 2000);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Помилка при відправці коментаря. Спробуйте ще раз.');
+                    });
+            });
+        }
 
         // Фільтрація замовлень
         const filterForm = document.getElementById('filter-form');
         if (filterForm) {
-            filterForm.addEventListener('submit', function(e) {
-                // Форма відправляється стандартно через GET запит
+            // Автоматичне відправлення форми фільтрації при зміні значення фільтрів
+            document.querySelectorAll('#filter-form select').forEach(select => {
+                select.addEventListener('change', function() {
+                    filterForm.submit();
+                });
             });
         }
 
@@ -2718,7 +2797,7 @@ try {
             const previewContainer = document.getElementById(previewContainerId);
             const hiddenInput = document.getElementById(hiddenInputId);
 
-            if (!dropZone || !fileInput || !previewContainer || !hiddenInput) return;
+            if (!dropZone || !fileInput) return;
 
             // Масив для зберігання даних перетягнутих файлів
             let droppedFiles = [];
@@ -2746,10 +2825,15 @@ try {
 
                 if (e.dataTransfer.files.length) {
                     fileInput.files = e.dataTransfer.files;
-                    updateThumbnail(e.dataTransfer.files);
+
+                    if (previewContainer) {
+                        updateThumbnail(e.dataTransfer.files, previewContainer);
+                    }
 
                     // Зчитування файлів у base64 для можливості передачі їх через форму
-                    readFilesToBase64(e.dataTransfer.files);
+                    if (hiddenInput) {
+                        readFilesToBase64(e.dataTransfer.files, hiddenInput, droppedFiles);
+                    }
                 }
             });
 
@@ -2761,98 +2845,105 @@ try {
             // Обробка вибраних файлів через стандартний вибір
             fileInput.addEventListener('change', e => {
                 if (fileInput.files.length) {
-                    updateThumbnail(fileInput.files);
-
-                    // Зчитування файлів у base64
-                    readFilesToBase64(fileInput.files);
-                }
-            });
-
-            // Відображення попереднього перегляду файлів
-            function updateThumbnail(files) {
-                previewContainer.innerHTML = '';
-
-                for (let i = 0; i < files.length; i++) {
-                    const file = files[i];
-                    const fileName = file.name;
-                    const fileSize = (file.size / 1024).toFixed(2); // в KB
-
-                    const thumbElement = document.createElement('div');
-                    thumbElement.className = 'drop-zone-thumb';
-
-                    const ext = fileName.split('.').pop().toLowerCase();
-                    let icon = 'fa-file';
-
-                    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
-                        icon = 'fa-file-image';
-                    } else if (['mp4', 'avi', 'mov'].includes(ext)) {
-                        icon = 'fa-file-video';
-                    } else if (ext === 'pdf') {
-                        icon = 'fa-file-pdf';
-                    } else if (['doc', 'docx'].includes(ext)) {
-                        icon = 'fa-file-word';
-                    } else if (ext === 'txt') {
-                        icon = 'fa-file-alt';
+                    if (previewContainer) {
+                        updateThumbnail(fileInput.files, previewContainer);
                     }
 
-                    thumbElement.innerHTML = `
-                        <i class="fas ${icon}"></i>
-                        <span>${fileName} (${fileSize} KB)</span>
-                        <button type="button" class="btn btn-sm remove-file" data-index="${i}">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    `;
+                    // Зчитування файлів у base64
+                    if (hiddenInput) {
+                        readFilesToBase64(fileInput.files, hiddenInput, droppedFiles);
+                    }
+                }
+            });
+        }
 
-                    previewContainer.appendChild(thumbElement);
+        // Відображення попереднього перегляду файлів
+        function updateThumbnail(files, previewContainer) {
+            if (!previewContainer) return;
+
+            previewContainer.innerHTML = '';
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fileName = file.name;
+                const fileSize = (file.size / 1024).toFixed(2); // в KB
+
+                const thumbElement = document.createElement('div');
+                thumbElement.className = 'drop-zone-thumb';
+
+                const ext = fileName.split('.').pop().toLowerCase();
+                let icon = 'fa-file';
+
+                if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
+                    icon = 'fa-file-image';
+                } else if (['mp4', 'avi', 'mov'].includes(ext)) {
+                    icon = 'fa-file-video';
+                } else if (ext === 'pdf') {
+                    icon = 'fa-file-pdf';
+                } else if (['doc', 'docx'].includes(ext)) {
+                    icon = 'fa-file-word';
+                } else if (ext === 'txt') {
+                    icon = 'fa-file-alt';
                 }
 
-                // Додаємо обробники для кнопок видалення
-                document.querySelectorAll(`#${previewContainerId} .remove-file`).forEach(button => {
-                    button.addEventListener('click', function() {
-                        const index = parseInt(this.getAttribute('data-index'));
-                        // Видаляємо файл з масиву
-                        droppedFiles.splice(index, 1);
-                        // Оновлюємо приховане поле
-                        hiddenInput.value = droppedFiles.length ? JSON.stringify(droppedFiles) : '';
-                        // Оновлюємо попередній перегляд
-                        this.closest('.drop-zone-thumb').remove();
-                        // Перерахуємо індекси для кнопок видалення
-                        document.querySelectorAll(`#${previewContainerId} .remove-file`).forEach((btn, idx) => {
-                            btn.setAttribute('data-index', idx);
-                        });
-                    });
-                });
+                thumbElement.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span>${fileName} (${fileSize} KB)</span>
+                <button type="button" class="btn btn-sm remove-file" data-index="${i}">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+
+                previewContainer.appendChild(thumbElement);
             }
 
-            // Зчитування файлів у base64
-            function readFilesToBase64(files) {
-                droppedFiles = []; // Очищаємо масив
+            // Додаємо обробники для кнопок видалення
+            document.querySelectorAll(`#${previewContainer.id} .remove-file`).forEach(button => {
+                button.addEventListener('click', function() {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    const parent = this.closest('.drop-zone-thumb');
+                    if (parent) {
+                        parent.remove();
+                    }
+                });
+            });
+        }
 
-                for (let i = 0; i < files.length; i++) {
-                    const file = files[i];
-                    const reader = new FileReader();
+        // Зчитування файлів у base64
+        function readFilesToBase64(files, hiddenInput, droppedFiles) {
+            if (!hiddenInput) return;
 
-                    reader.onload = function(e) {
+            droppedFiles = [];
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const reader = new FileReader();
+
+                reader.onload = (function(currentFile) {
+                    return function(e) {
                         droppedFiles.push({
-                            name: file.name,
-                            type: file.type,
+                            name: currentFile.name,
+                            type: currentFile.type,
+                            size: currentFile.size,
                             data: e.target.result
                         });
 
-                        // Оновлюємо приховане поле з даними про файли
-                        hiddenInput.value = JSON.stringify(droppedFiles);
+                        // Оновлюємо приховане поле форми після зчитування всіх файлів
+                        if (droppedFiles.length === files.length) {
+                            hiddenInput.value = JSON.stringify(droppedFiles);
+                        }
                     };
+                })(file);
 
-                    reader.readAsDataURL(file);
-                }
+                reader.readAsDataURL(file);
             }
         }
 
-        // Ініціалізуємо зони для перетягування файлів
-        setupDropZone('drop-zone', 'drop-zone-input', 'file-preview-container', 'dropped_files_data'); // Для створення замовлення
-        setupDropZone('edit-drop-zone', 'edit-drop-zone-input', 'edit-file-preview-container', 'edit-dropped-files-data'); // Для редагування замовлення
-        setupDropZone('profile-drop-zone', 'profile_pic', 'profile-preview-container', 'profile-dropped-files'); // Для фото профілю
-        });
-    </script>
+        // Налаштовуємо зони для перетягування файлів
+        setupDropZone('drop-zone', 'drop-zone-input', 'file-preview-container', 'dropped_files_data');
+        setupDropZone('edit-drop-zone', 'edit-drop-zone-input', 'edit-file-preview-container', 'edit-dropped-files-data');
+        setupDropZone('profile-drop-zone', 'profile_pic', 'profile-preview-container', 'profile-dropped-file');
+    });
+</script>
 </body>
 </html>
