@@ -74,11 +74,11 @@ function sendNotificationEmail($to, $subject, $message, $attachments = []) {
         $mail->Username   = 'lagodiy.info@lagodiy.com';
         $mail->Password   = '3zIDVnH#tu?2&uIn';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+        $mail->Port       = 465;
 
         // Recipients
-        $mail->setFrom('service@example.com', 'Service Center');
-        $mail->addAddress($to);
+        $mail->setFrom('no-reply@lagodiy.com', 'Lagodiy Service');
+        $mail->isHTML(true);
 
         // Attachments
         if (!empty($attachments)) {
@@ -102,8 +102,8 @@ function sendNotificationEmail($to, $subject, $message, $attachments = []) {
     }
 }
 
-// Перевірка кількості активних замовлень
-$stmt = $conn->prepare("SELECT COUNT(*) as active_orders FROM orders WHERE user_id = ? AND is_closed = 0");
+// ЗМІНЕНО: Перевірка кількості активних замовлень зі статусами "новий", "в роботі", "очікує товар"
+$stmt = $conn->prepare("SELECT COUNT(*) as active_orders FROM orders WHERE user_id = ? AND is_closed = 0 AND (status = 'Нове' OR status = 'В роботі' OR status = 'Очікує товар')");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $active_result = $stmt->get_result();
@@ -442,9 +442,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_order']) && !$b
         die("Невалідний CSRF токен!");
     }
 
-    // Перевірка ліміту замовлень
+    // ЗМІНЕНО: Перевірка ліміту замовлень (тільки для активних замовлень)
     if ($active_orders_count >= 5) {
-        $_SESSION['error'] = "Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень.";
+        $_SESSION['error'] = "Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень, або завершення деяких з них.";
         header("Location: dashboard.php");
         exit();
     }
@@ -937,7 +937,7 @@ function processAdminResponse($conn, $user_id, $order_id) {
                     <p><strong>Замовлення:</strong> #{$order_id}</p>
                     <p><strong>Адміністратор:</strong> {$comment['admin_name']}</p>
                     <p><strong>Повідомлення:</strong><br>{$comment['content']}</p>
-                    <p><strong>Прикріплений файл:</strong> Для перегляду файлу, будь ласка, перейдіть до особистого кабінету.</p>
+                    <p><strong>Прикріплений файл:</strong> Для перегляду файлу, будь ласка, перейдіть до особистого кабінету</p>
                 </body>
                 </html>
             ";
@@ -1830,7 +1830,7 @@ foreach ($orders as &$order) {
         <h1>Особистий кабінет</h1>
         <div class="header-actions">
             <div class="current-time" id="current-time">
-                <?= date('d.m.Y H:i', strtotime('2025-03-19 07:20:02')) ?>
+                <?= date('d.m.Y H:i', strtotime('2025-03-19 19:22:26')) ?>
             </div>
             <div class="theme-selector">
                 <div class="theme-option theme-option-light active" data-theme="light" title="Світла тема"></div>
@@ -1924,7 +1924,199 @@ if (!empty($recent_orders)):
             <div class="file-item">
             <?php
             $ext = pathinfo($file['file_name'], PATHINFO_EXTENSION);
-                                                               $icon = 'fa-file';
+            $icon = 'fa-file';
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
+                $icon = 'fa-file-image';
+            } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
+                $icon = 'fa-file-video';
+            } elseif (in_array($ext, ['pdf'])) {
+                $icon = 'fa-file-image';
+            } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
+                $icon = 'fa-file-video';
+            } elseif (in_array($ext, ['pdf'])) {
+                $icon = 'fa-file-pdf';
+            } elseif (in_array($ext, ['doc', 'docx'])) {
+                $icon = 'fa-file-word';
+            } elseif (in_array($ext, ['txt'])) {
+                $icon = 'fa-file-alt';
+            }
+            ?>
+                <i class="fas <?= $icon ?> file-icon"></i>
+                <span class="file-name"><?= htmlspecialchars($file['file_name']) ?></span>
+                <div class="file-actions">
+                    <button class="btn btn-sm view-file" data-path="../<?= htmlspecialchars($file['file_path']) ?>" data-filename="<?= htmlspecialchars($file['file_name']) ?>">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <a class="btn btn-sm" href="../<?= htmlspecialchars($file['file_path']) ?>" download="<?= htmlspecialchars($file['file_name']) ?>">
+                        <i class="fas fa-download"></i>
+                    </a>
+                </div>
+            </div>
+        <?php endforeach; ?>
+        </div>
+        </div>
+        <?php endif; ?>
+
+            <?php if (!empty($order['comments'])): ?>
+                <div class="comments-section">
+                    <div class="order-detail-label">Коментарі адміністратора:</div>
+                    <?php foreach ($order['comments'] as $comment): ?>
+                        <div class="comment">
+                            <div class="comment-header">
+                                <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
+                                <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
+                                                 <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
+                                             </span>
+                            </div>
+                            <div class="comment-body">
+                                <?= nl2br(htmlspecialchars($comment['content'])) ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($order['user_comment']): ?>
+                <div class="user-comment-section">
+                    <div class="order-detail-label">Ваш коментар:</div>
+                    <div class="comment">
+                        <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
+                        <?php if (!$order['is_closed'] && !$block_message): ?>
+                            <button class="btn btn-sm delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
+
+            <?php if (!$order['is_closed'] && !$block_message): ?>
+                <div class="order-actions">
+                    <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
+                        <i class="fas fa-edit"></i> Редагувати
+                    </button>
+                    <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
+                        <i class="fas fa-comment"></i> Додати коментар
+                    </button>
+                </div>
+            <?php elseif ($order['is_closed']): ?>
+                <div class="order-closed-notice">
+                    <em>Замовлення завершено, редагування недоступне</em>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endforeach; ?>
+<?php else: ?>
+    <p>Ви ще не маєте замовлень. Створіть нове замовлення.</p>
+<?php endif; ?>
+    </div>
+    </div>
+
+    <div class="tab-content" id="orders-content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Мої замовлення</h2>
+            </div>
+
+            <div class="filters-bar">
+                <form action="" method="get" class="filter-form" id="filter-form">
+                    <div class="filter-group">
+                        <select name="status" class="form-control">
+                            <option value="">Всі статуси</option>
+                            <?php foreach ($statuses as $status): ?>
+                                <option value="<?= htmlspecialchars($status) ?>" <?= $filter_status === $status ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($status) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+
+                        <select name="service" class="form-control">
+                            <option value="">Всі послуги</option>
+                            <?php foreach ($services as $service): ?>
+                                <option value="<?= htmlspecialchars($service) ?>" <?= $filter_service === $service ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($service) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+
+                        <div class="search-bar">
+                            <input type="text" name="search" class="form-control" placeholder="Пошук замовлень..." value="<?= htmlspecialchars($search_query) ?>">
+                        </div>
+
+                        <button type="submit" class="btn">
+                            <i class="fas fa-filter"></i> Фільтрувати
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <?php if (!empty($orders)): ?>
+                <div class="orders-list">
+                    <?php foreach ($orders as $order):
+                        $has_new_messages = !empty($order['new_messages']);
+                        ?>
+                        <div class="order-card <?= $has_new_messages ? 'has-new-messages' : '' ?>">
+                            <div class="order-header">
+                                <h3 class="order-id">
+                                    Замовлення #<?= $order['id'] ?>
+                                    <?php if ($has_new_messages): ?>
+                                        <span class="new-message-indicator" title="Нові повідомлення"></span>
+                                    <?php endif; ?>
+                                </h3>
+                                <div class="order-meta">
+                                 <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
+                                     <?= htmlspecialchars($order['status']) ?>
+                                 </span>
+                                    <span class="order-date">
+                                     <i class="far fa-calendar-alt"></i>
+                                     <span class="local-time" data-utc="<?= $order['created_at'] ?>">
+                                         <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
+                                     </span>
+                                 </span>
+                                </div>
+                            </div>
+                            <div class="order-body">
+                                <div class="order-detail">
+                                    <div class="order-detail-label">Послуга:</div>
+                                    <div><?= htmlspecialchars($order['service']) ?></div>
+                                </div>
+                                <div class="order-detail">
+                                    <div class="order-detail-label">Тип пристрою:</div>
+                                    <div><?= htmlspecialchars($order['device_type']) ?></div>
+                                </div>
+                                <div class="order-detail">
+                                    <div class="order-detail-label">Деталі:</div>
+                                    <div><?= nl2br(htmlspecialchars($order['details'])) ?></div>
+                                </div>
+                                <div class="order-detail">
+                                    <div class="order-detail-label">Контактний телефон:</div>
+                                    <div><?= htmlspecialchars($order['phone']) ?></div>
+                                </div>
+                                <?php if (!empty($order['address'])): ?>
+                                    <div class="order-detail">
+                                        <div class="order-detail-label">Адреса:</div>
+                                        <div><?= htmlspecialchars($order['address']) ?></div>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if (!empty($order['delivery_method'])): ?>
+                                    <div class="order-detail">
+                                        <div class="order-detail-label">Спосіб доставки:</div>
+                                        <div><?= htmlspecialchars($order['delivery_method']) ?></div>
+                                    </div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($order['files'])): ?>
+                                    <div class="order-files">
+                                        <div class="order-detail-label">Файли:</div>
+                                        <div class="file-list">
+                                            <?php foreach ($order['files'] as $file): ?>
+                                                <div class="file-item">
+                                                    <?php
+                                                    $ext = pathinfo($file['file_name'], PATHINFO_EXTENSION);
+                                                    $icon = 'fa-file';
                                                     if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
                                                         $icon = 'fa-file-image';
                                                     } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
@@ -1961,8 +2153,8 @@ if (!empty($recent_orders)):
                                                 <div class="comment-header">
                                                     <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
                                                     <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
-                                                        <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
-                                                    </span>
+                                                     <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
+                                                 </span>
                                                 </div>
                                                 <div class="comment-body">
                                                     <?= nl2br(htmlspecialchars($comment['content'])) ?>
@@ -2005,200 +2197,12 @@ if (!empty($recent_orders)):
                             </div>
                         </div>
                     <?php endforeach; ?>
-                <?php else: ?>
-                    <p>Ви ще не маєте замовлень. Створіть нове замовлення.</p>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="tab-content" id="orders-content">
-            <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title">Мої замовлення</h2>
                 </div>
-
-                <div class="filters-bar">
-                    <form action="" method="get" class="filter-form" id="filter-form">
-                        <div class="filter-group">
-                            <select name="status" class="form-control">
-                                <option value="">Всі статуси</option>
-                                <?php foreach ($statuses as $status): ?>
-                                    <option value="<?= htmlspecialchars($status) ?>" <?= $filter_status === $status ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($status) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-
-                            <select name="service" class="form-control">
-                                <option value="">Всі послуги</option>
-                                <?php foreach ($services as $service): ?>
-                                    <option value="<?= htmlspecialchars($service) ?>" <?= $filter_service === $service ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($service) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-
-                            <div class="search-bar">
-                                <input type="text" name="search" class="form-control" placeholder="Пошук замовлень..." value="<?= htmlspecialchars($search_query) ?>">
-                            </div>
-
-                            <button type="submit" class="btn">
-                                <i class="fas fa-filter"></i> Фільтрувати
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <?php if (!empty($orders)): ?>
-                    <div class="orders-list">
-                        <?php foreach ($orders as $order):
-                            $has_new_messages = !empty($order['new_messages']);
-                        ?>
-                            <div class="order-card <?= $has_new_messages ? 'has-new-messages' : '' ?>">
-                                <div class="order-header">
-                                    <h3 class="order-id">
-                                        Замовлення #<?= $order['id'] ?>
-                                        <?php if ($has_new_messages): ?>
-                                            <span class="new-message-indicator" title="Нові повідомлення"></span>
-                                        <?php endif; ?>
-                                    </h3>
-                                    <div class="order-meta">
-                                        <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
-                                            <?= htmlspecialchars($order['status']) ?>
-                                        </span>
-                                        <span class="order-date">
-                                            <i class="far fa-calendar-alt"></i>
-                                            <span class="local-time" data-utc="<?= $order['created_at'] ?>">
-                                                <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
-                                            </span>
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="order-body">
-                                    <div class="order-detail">
-                                        <div class="order-detail-label">Послуга:</div>
-                                        <div><?= htmlspecialchars($order['service']) ?></div>
-                                    </div>
-                                    <div class="order-detail">
-                                        <div class="order-detail-label">Тип пристрою:</div>
-                                        <div><?= htmlspecialchars($order['device_type']) ?></div>
-                                    </div>
-                                    <div class="order-detail">
-                                        <div class="order-detail-label">Деталі:</div>
-                                        <div><?= nl2br(htmlspecialchars($order['details'])) ?></div>
-                                    </div>
-                                    <div class="order-detail">
-                                        <div class="order-detail-label">Контактний телефон:</div>
-                                        <div><?= htmlspecialchars($order['phone']) ?></div>
-                                    </div>
-                                    <?php if (!empty($order['address'])): ?>
-                                        <div class="order-detail">
-                                            <div class="order-detail-label">Адреса:</div>
-                                            <div><?= htmlspecialchars($order['address']) ?></div>
-                                        </div>
-                                    <?php endif; ?>
-                                    <?php if (!empty($order['delivery_method'])): ?>
-                                        <div class="order-detail">
-                                            <div class="order-detail-label">Спосіб доставки:</div>
-                                            <div><?= htmlspecialchars($order['delivery_method']) ?></div>
-                                        </div>
-                                    <?php endif; ?>
-
-                                    <?php if (!empty($order['files'])): ?>
-                                        <div class="order-files">
-                                            <div class="order-detail-label">Файли:</div>
-                                            <div class="file-list">
-                                                <?php foreach ($order['files'] as $file): ?>
-                                                    <div class="file-item">
-                                                        <?php
-                                                        $ext = pathinfo($file['file_name'], PATHINFO_EXTENSION);
-                                                        $icon = 'fa-file';
-                                                        if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
-                                                            $icon = 'fa-file-image';
-                                                        } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
-                                                            $icon = 'fa-file-video';
-                                                        } elseif (in_array($ext, ['pdf'])) {
-                                                            $icon = 'fa-file-pdf';
-                                                        } elseif (in_array($ext, ['doc', 'docx'])) {
-                                                            $icon = 'fa-file-word';
-                                                        } elseif (in_array($ext, ['txt'])) {
-                                                            $icon = 'fa-file-alt';
-                                                        }
-                                                        ?>
-                                                        <i class="fas <?= $icon ?> file-icon"></i>
-                                                        <span class="file-name"><?= htmlspecialchars($file['file_name']) ?></span>
-                                                        <div class="file-actions">
-                                                            <button class="btn btn-sm view-file" data-path="../<?= htmlspecialchars($file['file_path']) ?>" data-filename="<?= htmlspecialchars($file['file_name']) ?>">
-                                                                <i class="fas fa-eye"></i>
-                                                            </button>
-                                                            <a class="btn btn-sm" href="../<?= htmlspecialchars($file['file_path']) ?>" download="<?= htmlspecialchars($file['file_name']) ?>">
-                                                                <i class="fas fa-download"></i>
-                                                            </a>
-                                                        </div>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-
-                                    <?php if (!empty($order['comments'])): ?>
-                                        <div class="comments-section">
-                                            <div class="order-detail-label">Коментарі адміністратора:</div>
-                                            <?php foreach ($order['comments'] as $comment): ?>
-                                                <div class="comment">
-                                                    <div class="comment-header">
-                                                        <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
-                                                        <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
-                                                            <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
-                                                        </span>
-                                                    </div>
-                                                    <div class="comment-body">
-                                                        <?= nl2br(htmlspecialchars($comment['content'])) ?>
-                                                    </div>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    <?php endif; ?>
-
-                                    <?php if ($order['user_comment']): ?>
-                                        <div class="user-comment-section">
-                                            <div class="order-detail-label">Ваш коментар:</div>
-                                            <div class="comment">
-                                                <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
-                                                <?php if (!$order['is_closed'] && !$block_message): ?>
-                                                    <button class="btn btn-sm delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
-                                                        <i class="fas fa-trash-alt"></i>
-                                                    </button>
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-
-                                    <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
-
-                                    <?php if (!$order['is_closed'] && !$block_message): ?>
-                                        <div class="order-actions">
-                                            <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
-                                                <i class="fas fa-edit"></i> Редагувати
-                                            </button>
-                                            <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
-                                                <i class="fas fa-comment"></i> Додати коментар
-                                            </button>
-                                        </div>
-                                    <?php elseif ($order['is_closed']): ?>
-                                        <div class="order-closed-notice">
-                                            <em>Замовлення завершено, редагування недоступне</em>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <p>Замовлення не знайдені.</p>
-                <?php endif; ?>
-            </div>
+            <?php else: ?>
+                <p>Замовлення не знайдені.</p>
+            <?php endif; ?>
         </div>
+    </div>
 
     <div class="tab-content" id="new-order-content">
         <div class="card">
@@ -2206,9 +2210,10 @@ if (!empty($recent_orders)):
                 <h2 class="card-title">Створити нове замовлення</h2>
             </div>
 
+            <!-- ЗМІНЕНО: Повідомлення про ліміт замовлень -->
             <?php if ($active_orders_count >= 5 && !$block_message): ?>
                 <div class="alert alert-error">
-                    Ви досягли ліміту активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень.
+                    Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень, або завершення деяких з них.
                 </div>
             <?php elseif (!$block_message): ?>
                 <form method="post" enctype="multipart/form-data" class="order-form">
@@ -2411,17 +2416,6 @@ if (!empty($recent_orders)):
                         <textarea name="address" id="profile_address" class="form-control" rows="2" required><?= htmlspecialchars($user_data['address'] ?? '') ?></textarea>
                     </div>
 
-                    <div class="form-group">
-                        <label for="profile_delivery_method" class="required-field">Спосіб доставки за замовчуванням:</label>
-                        <select name="delivery_method" id="profile_delivery_method" class="form-control" required>
-                            <option value="">Виберіть спосіб доставки</option>
-                            <option value="Самовивіз" <?= ($user_data['delivery_method'] ?? '') === 'Самовивіз' ? 'selected' : '' ?>>Самовивіз</option>
-                            <option value="Кур'єр" <?= ($user_data['delivery_method'] ?? '') === 'Кур\'єр' ? 'selected' : '' ?>>Кур'єр</option>
-                            <option value="Нова пошта" <?= ($user_data['delivery_method'] ?? '') === 'Нова пошта' ? 'selected' : '' ?>>Нова пошта</option>
-                            <option value="Укрпошта" <?= ($user_data['delivery_method'] ?? '') === 'Укрпошта' ? 'selected' : '' ?>>Укрпошта</option>
-                        </select>
-                    </div>
-
                     <button type="submit" class="btn">Зберегти зміни</button>
                 </form>
             </div>
@@ -2433,7 +2427,7 @@ if (!empty($recent_orders)):
 
                     <div class="form-group">
                         <label for="current_email">Поточна email адреса:</label>
-                        <input type="email" id="current_email" class="form-control" value="<?= htmlspecialchars($user_data['email'] ?? '') ?>" readonly>
+                        <input type="email" id="current_email" class="form-control" value="<?= htmlspecialchars($user_data['email']) ?>" disabled>
                     </div>
 
                     <div class="form-group">
@@ -2442,8 +2436,8 @@ if (!empty($recent_orders)):
                     </div>
 
                     <div class="form-group">
-                        <label for="password_email">Введіть пароль для підтвердження:</label>
-                        <input type="password" name="password" id="password_email" class="form-control" required>
+                        <label for="email_password">Ваш пароль:</label>
+                        <input type="password" name="password" id="email_password" class="form-control" required>
                     </div>
 
                     <button type="submit" class="btn">Змінити email</button>
@@ -2457,7 +2451,7 @@ if (!empty($recent_orders)):
 
                     <div class="form-group">
                         <label for="current_username">Поточний логін:</label>
-                        <input type="text" id="current_username" class="form-control" value="<?= htmlspecialchars($username) ?>" readonly>
+                        <input type="text" id="current_username" class="form-control" value="<?= htmlspecialchars($username) ?>" disabled>
                     </div>
 
                     <div class="form-group">
@@ -2466,8 +2460,8 @@ if (!empty($recent_orders)):
                     </div>
 
                     <div class="form-group">
-                        <label for="password_username">Введіть пароль для підтвердження:</label>
-                        <input type="password" name="password" id="password_username" class="form-control" required>
+                        <label for="username_password">Ваш пароль:</label>
+                        <input type="password" name="password" id="username_password" class="form-control" required>
                     </div>
 
                     <button type="submit" class="btn">Змінити логін</button>
@@ -2487,7 +2481,7 @@ if (!empty($recent_orders)):
                     <div class="form-group">
                         <label for="new_password">Новий пароль:</label>
                         <input type="password" name="new_password" id="new_password" class="form-control" required>
-                        <small>Пароль повинен містити не менше 8 символів</small>
+                        <small>Пароль повинен мати не менше 8 символів</small>
                     </div>
 
                     <div class="form-group">
@@ -2500,1171 +2494,810 @@ if (!empty($recent_orders)):
             </div>
         </div>
     </div>
-</div>
+
+    <!-- Модальне вікно редагування замовлення -->
+    <div class="modal" id="edit-order-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Редагування замовлення <span id="edit-order-id"></span></h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form method="post" enctype="multipart/form-data" id="edit-order-form">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                <input type="hidden" name="edit_order" value="1">
+                <input type="hidden" name="order_id" id="modal-order-id" value="">
+                <input type="hidden" name="dropped_files" id="edit-dropped_files_data" value="">
+
+                <div class="form-group">
+                    <label for="edit-service" class="required-field">Послуга:</label>
+                    <select name="service" id="edit-service" class="form-control" required>
+                        <option value="">Виберіть послугу</option>
+                        <option value="Ремонт комп'ютера">Ремонт комп'ютера</option>
+                        <option value="Ремонт ноутбука">Ремонт ноутбука</option>
+                        <option value="Ремонт телефона">Ремонт телефона</option>
+                        <option value="Ремонт МФУ">Ремонт МФУ</option>
+                        <option value="Заправка картриджів">Заправка картриджів</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-device_type" class="required-field">Тип пристрою:</label>
+                    <select name="device_type" id="edit-device_type" class="form-control" required>
+                        <option value="">Виберіть тип пристрою</option>
+                        <option value="Комп'ютер">Комп'ютер</option>
+                        <option value="Ноутбук">Ноутбук</option>
+                        <option value="Телефон сенсорний">Телефон сенсорний</option>
+                        <option value="Телефон кнопковий">Телефон кнопковий</option>
+                        <option value="МФУ">МФУ</option>
+                        <option value="Принтер">Принтер</option>
+                        <option value="Інше">Інше</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-details" class="required-field">Деталі замовлення:</label>
+                    <textarea name="details" id="edit-details" class="form-control" rows="5" required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-phone" class="required-field">Контактний телефон:</label>
+                    <input type="tel" name="phone" id="edit-phone" class="form-control" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-address" class="required-field">Адреса:</label>
+                    <textarea name="address" id="edit-address" class="form-control" rows="2" required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-delivery_method" class="required-field">Спосіб доставки:</label>
+                    <select name="delivery_method" id="edit-delivery_method" class="form-control" required>
+                        <option value="">Виберіть спосіб доставки</option>
+                        <option value="Самовивіз">Самовивіз</option>
+                        <option value="Кур'єр">Кур'єр</option>
+                        <option value="Нова пошта">Нова пошта</option>
+                        <option value="Укрпошта">Укрпошта</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-user_comment">Ваш коментар:</label>
+                    <textarea name="user_comment" id="edit-user_comment" class="form-control" rows="2"></textarea>
+                </div>
+
+                <!-- Завантаження нових файлів -->
+                <div class="form-group">
+                    <label>Додати нові файли:</label>
+                    <div class="drop-zone" id="edit-drop-zone">
+                        <div class="drop-zone-prompt">
+                            <i class="fas fa-cloud-upload-alt fa-2x"></i>
+                            <p>Перетягніть файли сюди або натисніть для вибору файлів</p>
+                            <small>Максимальний розмір файлу: 10 МБ. Дозволені формати: jpg, jpeg, png, gif, mp4, avi, mov, pdf, doc, docx, txt</small>
+                        </div>
+                        <input type="file" name="order_files[]" id="edit-drop-zone-input" class="form-control" multiple hidden>
+                    </div>
+                    <div id="edit-file-preview-container"></div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn">
+                        <i class="fas fa-save"></i> Зберегти зміни
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальне вікно додавання коментаря -->
+    <div class="modal" id="add-comment-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Додати коментар до замовлення <span id="comment-order-id"></span></h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form method="post" id="add-comment-form">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                <input type="hidden" name="add_comment" value="1">
+                <input type="hidden" name="order_id" id="comment-order-id-input" value="">
+
+                <div class="form-group">
+                    <label for="comment-text">Ваш коментар:</label>
+                    <textarea name="comment" id="comment-text" class="form-control" rows="5" required></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn">
+                        <i class="fas fa-paper-plane"></i> Відправити коментар
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Модальне вікно для перегляду файлів -->
-    <div class="modal" id="fileViewerModal">
+    <div class="modal" id="file-view-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">Перегляд файлу</h3>
+                <h3 class="modal-title">Перегляд файлу <span id="file-name-title"></span></h3>
                 <button class="close-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="media-viewer"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальне вікно для редагування замовлення -->
-    <div class="modal" id="editOrderModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Редагування замовлення</h3>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form method="post" enctype="multipart/form-data" id="edit-order-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="edit_order" value="1">
-                    <input type="hidden" name="order_id" id="edit-order-id">
-                    <input type="hidden" name="dropped_files" id="edit_dropped_files_data" value="">
-
-                    <div class="form-group">
-                        <label for="edit-service" class="required-field">Послуга:</label>
-                        <select name="service" id="edit-service" class="form-control" required>
-                            <option value="">Виберіть послугу</option>
-                            <option value="Ремонт комп'ютера">Ремонт комп'ютера</option>
-                            <option value="Ремонт ноутбука">Ремонт ноутбука</option>
-                            <option value="Ремонт телефона">Ремонт телефона</option>
-                            <option value="Ремонт МФУ">Ремонт МФУ</option>
-                            <option value="Заправка картриджів">Заправка картриджів</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-device-type" class="required-field">Тип пристрою:</label>
-                        <select name="device_type" id="edit-device-type" class="form-control" required>
-                            <option value="">Виберіть тип пристрою</option>
-                            <option value="Комп'ютер">Комп'ютер</option>
-                            <option value="Ноутбук">Ноутбук</option>
-                            <option value="Телефон сенсорний">Телефон сенсорний</option>
-                            <option value="Телефон кнопковий">Телефон кнопковий</option>
-                            <option value="МФУ">МФУ</option>
-                            <option value="Принтер">Принтер</option>
-                            <option value="Інше">Інше</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-details" class="required-field">Деталі замовлення:</label>
-                        <textarea name="details" id="edit-details" class="form-control" rows="5" required></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-phone" class="required-field">Контактний телефон:</label>
-                        <input type="tel" name="phone" id="edit-phone" class="form-control" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-address" class="required-field">Адреса:</label>
-                        <textarea name="address" id="edit-address" class="form-control" rows="2" required></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-delivery-method" class="required-field">Спосіб доставки:</label>
-                        <select name="delivery_method" id="edit-delivery-method" class="form-control" required>
-                            <option value="">Виберіть спосіб доставки</option>
-                            <option value="Самовивіз">Самовивіз</option>
-                            <option value="Кур'єр">Кур'єр</option>
-                            <option value="Нова пошта">Нова пошта</option>
-                            <option value="Укрпошта">Укрпошта</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit-user-comment">Коментар до замовлення:</label>
-                        <textarea name="user_comment" id="edit-user-comment" class="form-control" rows="3"></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Поточні файли:</label>
-                        <div id="edit-current-files"></div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Додати нові файли:</label>
-                        <!-- Drag & Drop зона для редагування -->
-                        <div class="drop-zone" id="edit-drop-zone">
-                            <div class="drop-zone-prompt">
-                                <i class="fas fa-cloud-upload-alt fa-2x"></i>
-                                <p>Перетягніть файли сюди або натисніть для вибору файлів</p>
-                                <small>Максимальний розмір файлу: 10 МБ. Дозволені формати: jpg, jpeg, png, gif, mp4, avi, mov, pdf, doc, docx, txt</small>
-                            </div>
-                            <input type="file" name="order_files[]" id="edit-drop-zone-input" class="form-control" multiple hidden>
-                        </div>
-                        <div id="edit-file-preview-container"></div>
-                    </div>
-
-                    <button type="submit" class="btn">Зберегти зміни</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальне вікно для додавання коментаря -->
-    <div class="modal" id="addCommentModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Додати коментар</h3>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form method="post" id="add-comment-form">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <input type="hidden" name="add_comment" value="1">
-                    <input type="hidden" name="order_id" id="comment-order-id">
-
-                    <div class="form-group">
-                        <label for="comment">Ваш коментар:</label>
-                        <textarea name="comment" id="comment" class="form-control" rows="5" required></textarea>
-                    </div>
-
-                    <button type="submit" class="btn">Додати коментар</button>
-                </form>
+                <div id="file-content-container"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // Оновлення часу кожну хвилину
-        function updateTime() {
-            const timeElement = document.getElementById('current-time');
-            const now = new Date();
-            const formattedTime = new Intl.DateTimeFormat('uk-UA', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            }).format(now);
-            timeElement.textContent = formattedTime;
+        // Оновлення локального часу
+        function updateLocalTimes() {
+            document.getElementById('current-time').textContent = new Date().toLocaleString('uk-UA');
+
+            const utcTimeElements = document.querySelectorAll('.local-time');
+            utcTimeElements.forEach(element => {
+                const utcTime = element.getAttribute('data-utc');
+                if (utcTime) {
+                    const localTime = new Date(utcTime).toLocaleString('uk-UA');
+                    element.textContent = localTime;
+                }
+            });
         }
-        setInterval(updateTime, 60000); // Оновлювати кожну хвилину
-        updateTime(); // Запустити відразу після завантаження
 
-        // Конвертація UTC часу до локального часу користувача
-        document.querySelectorAll('.local-time').forEach(function(element) {
-            const utcTime = element.getAttribute('data-utc');
-            if (utcTime) {
-                const localTime = new Date(utcTime);
-                element.textContent = new Intl.DateTimeFormat('uk-UA', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                }).format(localTime);
-            }
-        });
+        // Функція для форматування розміру файлу
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' байт';
+            else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' КБ';
+            else return (bytes / 1048576).toFixed(1) + ' МБ';
+        }
 
-        // Переключення між вкладками сайдбара
-        document.querySelectorAll('.sidebar-menu a').forEach(function(link) {
-            link.addEventListener('click', function(e) {
+        // Обробка перегляду деталей замовлення
+        function initViewMoreButtons() {
+            const viewMoreButtons = document.querySelectorAll('.view-more-btn');
+            viewMoreButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const orderBody = this.closest('.order-body');
+                    orderBody.classList.toggle('expanded');
+                    this.innerHTML = orderBody.classList.contains('expanded')
+                        ? 'Згорнути <i class="fas fa-chevron-up"></i>'
+                        : 'Переглянути повну інформацію <i class="fas fa-chevron-down"></i>';
+                });
+            });
+        }
+
+        // Функція для ініціалізації Drag & Drop
+        function initDragAndDrop(dropZoneId, inputId, previewContainerId, droppedFilesInputId) {
+            const dropZone = document.getElementById(dropZoneId);
+            const fileInput = document.getElementById(inputId);
+            const previewContainer = document.getElementById(previewContainerId);
+            const droppedFilesInput = document.getElementById(droppedFilesInputId);
+
+            let droppedFilesData = [];
+
+            if (!dropZone || !fileInput) return;
+
+            // Обробка вибору файлів через клік
+            dropZone.addEventListener('click', () => fileInput.click());
+
+            // Обробка вибору файлів
+            fileInput.addEventListener('change', function() {
+                updateFilePreview(this.files);
+            });
+
+            // Обробка Drag & Drop
+            dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
+                dropZone.classList.add('active');
+            });
 
-                // Видалення активного класу з усіх пунктів меню
-                document.querySelectorAll('.sidebar-menu a').forEach(function(item) {
-                    item.classList.remove('active');
-                });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('active');
+            });
 
-                // Додавання активного класу до натиснутого пункту
-                this.classList.add('active');
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('active');
 
-                // Визначення цільового контенту
-                const targetId = this.getAttribute('data-tab');
-                if (targetId) {
-                    // Приховати всі вкладки контенту
-                    document.querySelectorAll('.main-content .tab-content').forEach(function(content) {
-                        content.classList.remove('active');
-                    });
-
-                    // Показати цільову вкладку
-                    document.getElementById(targetId + '-content').classList.add('active');
+                if (e.dataTransfer.files.length > 0) {
+                    handleDroppedFiles(e.dataTransfer.files);
                 }
             });
-        });
 
-        // Переключення між вкладками налаштувань
-        document.querySelectorAll('.tab').forEach(function(tab) {
-            tab.addEventListener('click', function() {
-                // Видалення активного класу з усіх вкладок
-                document.querySelectorAll('.tab').forEach(function(t) {
-                    t.classList.remove('active');
-                });
+            // Обробка перетягнутих файлів
+            function handleDroppedFiles(files) {
+                for (const file of files) {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = function() {
+                        const fileData = {
+                            name: file.name,
+                            data: reader.result
+                        };
+                        droppedFilesData.push(fileData);
+                        droppedFilesInput.value = JSON.stringify(droppedFilesData);
 
-                // Додавання активного класу до натиснутої вкладки
-                this.classList.add('active');
+                        // Додавання превью файлу
+                        const previewItem = document.createElement('div');
+                        previewItem.className = 'drop-zone-thumb';
 
-                // Визначення цільового контенту
-                const targetId = this.getAttribute('data-target');
+                        let iconClass = 'fa-file';
+                        const ext = file.name.split('.').pop().toLowerCase();
+                        if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
+                            iconClass = 'fa-file-image';
+                        } else if (['mp4', 'avi', 'mov'].includes(ext)) {
+                            iconClass = 'fa-file-video';
+                        } else if (ext === 'pdf') {
+                            iconClass = 'fa-file-pdf';
+                        } else if (['doc', 'docx'].includes(ext)) {
+                            iconClass = 'fa-file-word';
+                        } else if (ext === 'txt') {
+                            iconClass = 'fa-file-alt';
+                        }
 
-                // Приховати всі вкладки контенту
-                document.querySelectorAll('#settings-content .tab-content').forEach(function(content) {
-                    content.classList.remove('active');
-                });
-
-                // Показати цільову вкладку
-                document.getElementById(targetId + '-content').classList.add('active');
-            });
-        });
-
-        // Згортання/розгортання сайдбару
-        document.getElementById('toggle-sidebar').addEventListener('click', function() {
-            const sidebar = document.getElementById('sidebar');
-            sidebar.classList.toggle('collapsed');
-            sidebar.classList.toggle('expanded');
-        });
-
-        // Згортання/розгортання елементів замовлення
-        document.querySelectorAll('.view-more-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                const orderBody = this.closest('.order-body');
-                orderBody.classList.toggle('expanded');
-                if (orderBody.classList.contains('expanded')) {
-                    this.innerHTML = 'Згорнути <i class="fas fa-chevron-up"></i>';
-                } else {
-                    this.innerHTML = 'Переглянути повну інформацію <i class="fas fa-chevron-down"></i>';
+                        previewItem.innerHTML = `
+                        <i class="fas ${iconClass}" style="margin-right: 5px;"></i>
+                        <span>${file.name}</span> (${formatFileSize(file.size)})
+                        <button type="button" class="btn-text remove-file" data-index="${droppedFilesData.length - 1}">&times;</button>
+                    `;
+                        previewContainer.appendChild(previewItem);
+                    };
                 }
-            });
-        });
-
-        // Функціонал модального вікна для перегляду файлів
-        const fileViewerModal = document.getElementById('fileViewerModal');
-        const mediaViewer = document.querySelector('.media-viewer');
-
-        document.querySelectorAll('.view-file').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                const filePath = this.getAttribute('data-path');
-                const fileName = this.getAttribute('data-filename');
-
-                // Очищення перегляду
-                mediaViewer.innerHTML = '';
-
-                // Визначення типу файлу
-                const fileExt = fileName.split('.').pop().toLowerCase();
-                const modalTitle = document.querySelector('#fileViewerModal .modal-title');
-                modalTitle.textContent = 'Файл: ' + fileName;
-
-                if(['jpg', 'jpeg', 'png', 'gif'].includes(fileExt)) {
-                    // Зображення
-                    const img = document.createElement('img');
-                    img.src = filePath;
-                    img.alt = fileName;
-                    mediaViewer.appendChild(img);
-                } else if(['mp4', 'avi', 'mov'].includes(fileExt)) {
-                    // Відео
-                    const video = document.createElement('video');
-                    video.src = filePath;
-                    video.controls = true;
-                    video.autoplay = false;
-                    mediaViewer.appendChild(video);
-                } else if(['pdf'].includes(fileExt)) {
-                    // PDF
-                    const embed = document.createElement('embed');
-                    embed.src = filePath;
-                    embed.type = "application/pdf";
-                    embed.width = "100%";
-                    embed.height = "500px";
-                    mediaViewer.appendChild(embed);
-                } else if(['txt'].includes(fileExt)) {
-                    // Текстовий файл
-                    fetch(filePath)
-                        .then(response => response.text())
-                        .then(text => {
-                            const pre = document.createElement('pre');
-                            pre.className = 'file-viewer';
-                            pre.textContent = text;
-                            mediaViewer.appendChild(pre);
-                        })
-                        .catch(error => {
-                            mediaViewer.innerHTML = `<div class="alert alert-error">Помилка завантаження файлу: ${error.message}</div>`;
-                        });
-                } else {
-                    // Інші файли
-                    const link = document.createElement('a');
-                    link.href = filePath;
-                    link.download = fileName;
-                    link.className = 'btn';
-                    link.innerHTML = '<i class="fas fa-download"></i> Завантажити файл';
-
-                    const message = document.createElement('p');
-                    message.textContent = 'Цей тип файлу не можна переглянути безпосередньо. Завантажте файл для перегляду.';
-
-                    mediaViewer.appendChild(message);
-                    mediaViewer.appendChild(link);
-                }
-
-                // Відображення модального вікна
-                fileViewerModal.style.display = 'block';
-            });
-        });
-
-        // Закриття модальних вікон
-        document.querySelectorAll('.close-modal').forEach(function(closeBtn) {
-            closeBtn.addEventListener('click', function() {
-                this.closest('.modal').style.display = 'none';
-                // Для відео - зупинка відтворення при закритті
-                const videos = this.closest('.modal').querySelectorAll('video');
-                videos.forEach(video => video.pause());
-            });
-        });
-
-        // Закриття модальних вікон при кліку поза ними
-        window.addEventListener('click', function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
-                // Для відео - зупинка відтворення при закритті
-                const videos = event.target.querySelectorAll('video');
-                videos.forEach(video => video.pause());
-            }
-        });
-
-        // Функціонал модального вікна для редагування замовлення
-        const editOrderModal = document.getElementById('editOrderModal');
-
-        document.querySelectorAll('.edit-order').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                const orderId = this.getAttribute('data-id');
-
-                // Знаходження даних замовлення за ID
-                const orderCard = this.closest('.order-card');
-
-                if(orderCard) {
-                    document.getElementById('edit-order-id').value = orderId;
-
-                    // Заповнення форми даними замовлення
-                    document.getElementById('edit-service').value =
-                        orderCard.querySelector('.order-detail:nth-child(1) div:last-child').textContent.trim();
-
-                    document.getElementById('edit-device-type').value =
-                        orderCard.querySelector('.order-detail:nth-child(2) div:last-child').textContent.trim();
-
-                    document.getElementById('edit-details').value =
-                        orderCard.querySelector('.order-detail:nth-child(3) div:last-child').innerText.trim();
-
-                    // Телефон і адреса можуть бути в різних місцях, тому шукаємо за текстом заголовка
-                    const orderDetails = orderCard.querySelectorAll('.order-detail');
-                    orderDetails.forEach(detail => {
-                        const label = detail.querySelector('.order-detail-label').textContent;
-
-                        if(label.includes('Контактний телефон')) {
-                            document.getElementById('edit-phone').value =
-                                detail.querySelector('div:last-child').textContent.trim();
-                        }
-
-                        if(label.includes('Адреса')) {
-                            document.getElementById('edit-address').value =
-                                detail.querySelector('div:last-child').textContent.trim();
-                        }
-
-                        if(label.includes('Спосіб доставки')) {
-                            document.getElementById('edit-delivery-method').value =
-                                detail.querySelector('div:last-child').textContent.trim();
-                        }
-                    });
-
-                    // Коментар користувача
-                    const userCommentSection = orderCard.querySelector('.user-comment-section');
-                    if(userCommentSection) {
-                        const userComment = userCommentSection.querySelector('.comment').textContent.trim();
-                        document.getElementById('edit-user-comment').value = userComment;
-                    } else {
-                        document.getElementById('edit-user-comment').value = '';
-                    }
-
-                    // Відображення поточних файлів
-                    const currentFilesContainer = document.getElementById('edit-current-files');
-                    currentFilesContainer.innerHTML = '';
-
-                    const fileList = orderCard.querySelector('.file-list');
-                    if(fileList) {
-                        const fileItems = fileList.querySelectorAll('.file-item');
-
-                        if(fileItems.length > 0) {
-                            fileItems.forEach(item => {
-                                const fileName = item.querySelector('.file-name').textContent;
-                                const viewBtn = item.querySelector('.view-file');
-                                const filePath = viewBtn ? viewBtn.getAttribute('data-path') : '';
-
-                                const fileElement = document.createElement('div');
-                                fileElement.className = 'file-item';
-                                fileElement.innerHTML = `
-                                    <i class="${item.querySelector('.file-icon').className}"></i>
-                                    <span class="file-name">${fileName}</span>
-                                    <div class="file-actions">
-                                        <button class="btn btn-sm view-file" data-path="${filePath}" data-filename="${fileName}">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <a class="btn btn-sm" href="${filePath}" download="${fileName}">
-                                            <i class="fas fa-download"></i>
-                                        </a>
-                                    </div>
-                                `;
-
-                                currentFilesContainer.appendChild(fileElement);
-                            });
-                        } else {
-                            currentFilesContainer.innerHTML = '<p>Немає прикріплених файлів</p>';
-                        }
-                    } else {
-                        currentFilesContainer.innerHTML = '<p>Немає прикріплених файлів</p>';
-                    }
-
-                    // Очищаємо контейнер для попередження нових файлів
-                    document.getElementById('edit-file-preview-container').innerHTML = '';
-                }
-
-                // Відображення модального вікна
-                editOrderModal.style.display = 'block';
-
-                // Оновлення функціональності перегляду файлів у модальному вікні редагування
-                document.querySelectorAll('#edit-current-files .view-file').forEach(function(btn) {
-                    btn.addEventListener('click', function() {
-                        const filePath = this.getAttribute('data-path');
-                        const fileName = this.getAttribute('data-filename');
-                        showFileInViewer(filePath, fileName);
-                    });
-                });
-            });
-        });
-
-        // Функція для відображення файлу у в'юері
-        function showFileInViewer(filePath, fileName) {
-            // Очищення перегляду
-            mediaViewer.innerHTML = '';
-
-            // Визначення типу файлу
-            const fileExt = fileName.split('.').pop().toLowerCase();
-            const modalTitle = document.querySelector('#fileViewerModal .modal-title');
-            modalTitle.textContent = 'Файл: ' + fileName;
-
-            if(['jpg', 'jpeg', 'png', 'gif'].includes(fileExt)) {
-                // Зображення
-                const img = document.createElement('img');
-                img.src = filePath;
-                img.alt = fileName;
-                mediaViewer.appendChild(img);
-            } else if(['mp4', 'avi', 'mov'].includes(fileExt)) {
-                // Відео
-                const video = document.createElement('video');
-                video.src = filePath;
-                video.controls = true;
-                video.autoplay = false;
-                mediaViewer.appendChild(video);
-            } else if(['pdf'].includes(fileExt)) {
-                // PDF
-                const embed = document.createElement('embed');
-                embed.src = filePath;
-                embed.type = "application/pdf";
-                embed.width = "100%";
-                embed.height = "500px";
-                mediaViewer.appendChild(embed);
-            } else if(['txt'].includes(fileExt)) {
-                // Текстовий файл
-                fetch(filePath)
-                    .then(response => response.text())
-                    .then(text => {
-                        const pre = document.createElement('pre');
-                        pre.className = 'file-viewer';
-                        pre.textContent = text;
-                        mediaViewer.appendChild(pre);
-                    })
-                    .catch(error => {
-                        mediaViewer.innerHTML = `<div class="alert alert-error">Помилка завантаження файлу: ${error.message}</div>`;
-                    });
-            } else {
-                // Інші файли
-                const link = document.createElement('a');
-                link.href = filePath;
-                link.download = fileName;
-                link.className = 'btn';
-                link.innerHTML = '<i class="fas fa-download"></i> Завантажити файл';
-
-                const message = document.createElement('p');
-                message.textContent = 'Цей тип файлу не можна переглянути безпосередньо. Завантажте файл для перегляду.';
-
-                mediaViewer.appendChild(message);
-                mediaViewer.appendChild(link);
             }
 
-            // Відображення модального вікна
-            fileViewerModal.style.display = 'block';
-        }
-
-        // Функціонал модального вікна для додавання коментаря
-        const addCommentModal = document.getElementById('addCommentModal');
-
-        document.querySelectorAll('.add-comment').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                const orderId = this.getAttribute('data-id');
-                document.getElementById('comment-order-id').value = orderId;
-
-                // Очищення попереднього коментаря
-                document.getElementById('comment').value = '';
-
-                // Відображення модального вікна
-                addCommentModal.style.display = 'block';
-            });
-        });
-
-        // Налаштування drag-and-drop для файлів замовлення
-        const dropZone = document.getElementById('drop-zone');
-        const dropZoneInput = document.getElementById('drop-zone-input');
-        const filePreviewContainer = document.getElementById('file-preview-container');
-        let droppedFiles = [];
-
-        if(dropZone && dropZoneInput) {
-            // Відкриття вікна вибору файлів при кліку на зону
-            dropZone.addEventListener('click', function() {
-                dropZoneInput.click();
-            });
-
-            // Обробка вибору файлів через діалог
-            dropZoneInput.addEventListener('change', function() {
-                handleFiles(this.files);
-            });
-
-            // Обробка drag-and-drop подій
-            ['dragover', 'dragleave', 'drop'].forEach(eventName => {
-                dropZone.addEventListener(eventName, function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    if(eventName === 'dragover') {
-                        dropZone.classList.add('active');
-                    } else if(eventName === 'dragleave') {
-                        dropZone.classList.remove('active');
-                    } else if(eventName === 'drop') {
-                        dropZone.classList.remove('active');
-                        const dt = e.dataTransfer;
-                        handleFiles(dt.files);
-                    }
-                });
-            });
-        }
-
-        // Налаштування drag-and-drop для форми редагування
-        const editDropZone = document.getElementById('edit-drop-zone');
-        const editDropZoneInput = document.getElementById('edit-drop-zone-input');
-        const editFilePreviewContainer = document.getElementById('edit-file-preview-container');
-        let editDroppedFiles = [];
-
-        if(editDropZone && editDropZoneInput) {
-            // Відкриття вікна вибору файлів при кліку на зону
-            editDropZone.addEventListener('click', function() {
-                editDropZoneInput.click();
-            });
-
-            // Обробка вибору файлів через діалог
-            editDropZoneInput.addEventListener('change', function() {
-                handleFilesForEdit(this.files);
-            });
-
-            // Обробка drag-and-drop подій
-            ['dragover', 'dragleave', 'drop'].forEach(eventName => {
-                editDropZone.addEventListener(eventName, function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    if(eventName === 'dragover') {
-                        editDropZone.classList.add('active');
-                    } else if(eventName === 'dragleave') {
-                        editDropZone.classList.remove('active');
-                    } else if(eventName === 'drop') {
-                        editDropZone.classList.remove('active');
-                        const dt = e.dataTransfer;
-                        handleFilesForEdit(dt.files);
-                    }
-                });
-            });
-        }
-
-        // Обробка файлів для нового замовлення
-        function handleFiles(files) {
-            if(!files || files.length === 0) return;
-
-            Array.from(files).forEach(file => {
-                // Перевірка типу файлу
-                const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/avi', 'video/quicktime', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-                const maxFileSize = 10 * 1024 * 1024; // 10 MB
-
-                if(!validTypes.includes(file.type)) {
-                    showMessage('Недозволений тип файлу: ' + file.name);
-                    return;
-                }
-
-                if(file.size > maxFileSize) {
-                    showMessage('Файл занадто великий: ' + file.name);
-                    return;
-                }
-
-                // Додавання попереднього перегляду файлу
-                const reader = new FileReader();
-
-                reader.onload = function(e) {
-                    const filePreview = document.createElement('div');
-                    filePreview.className = 'file-item';
+            // Оновлення превью файлів
+            function updateFilePreview(files) {
+                for (const file of files) {
+                    // Додавання превью файлу
+                    const previewItem = document.createElement('div');
+                    previewItem.className = 'drop-zone-thumb';
 
                     let iconClass = 'fa-file';
-                    if(file.type.startsWith('image/')) {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
                         iconClass = 'fa-file-image';
-                    } else if(file.type.startsWith('video/')) {
+                    } else if (['mp4', 'avi', 'mov'].includes(ext)) {
                         iconClass = 'fa-file-video';
-                    } else if(file.type === 'application/pdf') {
+                    } else if (ext === 'pdf') {
                         iconClass = 'fa-file-pdf';
-                    } else if(file.type === 'application/msword' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                    } else if (['doc', 'docx'].includes(ext)) {
                         iconClass = 'fa-file-word';
-                    } else if(file.type === 'text/plain') {
+                    } else if (ext === 'txt') {
                         iconClass = 'fa-file-alt';
                     }
 
-                    filePreview.innerHTML = `
-                        <i class="fas ${iconClass} file-icon"></i>
-                        <span class="file-name">${file.name}</span>
-                        <button type="button" class="btn btn-sm remove-file">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    `;
-
-                    filePreviewContainer.appendChild(filePreview);
-
-                    // Для зображень можна додати попередній перегляд
-                    if(file.type.startsWith('image/')) {
-                        const imgPreview = document.createElement('img');
-                        imgPreview.src = e.target.result;
-                        imgPreview.style.maxWidth = '100px';
-                        imgPreview.style.maxHeight = '100px';
-                        imgPreview.style.marginTop = '5px';
-                        filePreview.appendChild(imgPreview);
-                    }
-
-                    // Додавання функціональності для видалення файлу
-                    const removeBtn = filePreview.querySelector('.remove-file');
-                    removeBtn.addEventListener('click', function() {
-                        filePreview.remove();
-                    });
-
-                    // Збереження файлу для завантаження через AJAX
-                    if(file.type.startsWith('image/')) {
-                        droppedFiles.push({
-                            name: file.name,
-                            data: e.target.result
-                        });
-                        document.getElementById('dropped_files_data').value = JSON.stringify(droppedFiles);
-                    }
-                };
-
-                reader.readAsDataURL(file);
-            });
-        }
-
-        // Обробка файлів для редагування замовлення
-        function handleFilesForEdit(files) {
-            if(!files || files.length === 0) return;
-
-            Array.from(files).forEach(file => {
-                // Перевірка типу файлу
-                const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/avi', 'video/quicktime', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-                const maxFileSize = 10 * 1024 * 1024; // 10 MB
-
-                if(!validTypes.includes(file.type)) {
-                    showMessage('Недозволений тип файлу: ' + file.name);
-                    return;
+                    previewItem.innerHTML = `
+                    <i class="fas ${iconClass}" style="margin-right: 5px;"></i>
+                    <span>${file.name}</span> (${formatFileSize(file.size)})
+                `;
+                    previewContainer.appendChild(previewItem);
                 }
-
-                if(file.size > maxFileSize) {
-                    showMessage('Файл занадто великий: ' + file.name);
-                    return;
-                }
-
-                // Додавання попереднього перегляду файлу
-                const reader = new FileReader();
-
-                reader.onload = function(e) {
-                    const filePreview = document.createElement('div');
-                    filePreview.className = 'file-item';
-
-                    let iconClass = 'fa-file';
-                    if(file.type.startsWith('image/')) {
-                        iconClass = 'fa-file-image';
-                    } else if(file.type.startsWith('video/')) {
-                        iconClass = 'fa-file-video';
-                    } else if(file.type === 'application/pdf') {
-                        iconClass = 'fa-file-pdf';
-                    } else if(file.type === 'application/msword' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-                        iconClass = 'fa-file-word';
-                    } else if(file.type === 'text/plain') {
-                        iconClass = 'fa-file-alt';
-                    }
-
-                    filePreview.innerHTML = `
-                        <i class="fas ${iconClass} file-icon"></i>
-                        <span class="file-name">${file.name}</span>
-                        <button type="button" class="btn btn-sm remove-file">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    `;
-
-                    editFilePreviewContainer.appendChild(filePreview);
-
-                    // Для зображень можна додати попередній перегляд
-                    if(file.type.startsWith('image/')) {
-                        const imgPreview = document.createElement('img');
-                        imgPreview.src = e.target.result;
-                        imgPreview.style.maxWidth = '100px';
-                        imgPreview.style.maxHeight = '100px';
-                        imgPreview.style.marginTop = '5px';
-                        filePreview.appendChild(imgPreview);
-                    }
-
-                    // Додавання функціональності для видалення файлу
-                    const removeBtn = filePreview.querySelector('.remove-file');
-                    removeBtn.addEventListener('click', function() {
-                        filePreview.remove();
-                    });
-
-                    // Збереження файлу для завантаження через AJAX
-                    if(file.type.startsWith('image/')) {
-                        editDroppedFiles.push({
-                            name: file.name,
-                            data: e.target.result
-                        });
-                        document.getElementById('edit_dropped_files_data').value = JSON.stringify(editDroppedFiles);
-                    }
-                };
-
-                reader.readAsDataURL(file);
-            });
-        }
-
-        // Функція для відображення тимчасових повідомлень
-        function showMessage(message, isSuccess = false) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'temp-message';
-            messageDiv.textContent = message;
-
-            if(isSuccess) {
-                messageDiv.style.backgroundColor = 'var(--success-color)';
             }
 
-            document.body.appendChild(messageDiv);
+            // Обробка видалення файлів
+            previewContainer.addEventListener('click', function(e) {
+                if (e.target.classList.contains('remove-file')) {
+                    const index = parseInt(e.target.getAttribute('data-index'));
+                    droppedFilesData.splice(index, 1);
+                    droppedFilesInput.value = JSON.stringify(droppedFilesData);
+                    e.target.closest('.drop-zone-thumb').remove();
+
+                    // Оновлення індексів для інших кнопок видалення
+                    const removeButtons = previewContainer.querySelectorAll('.remove-file');
+                    removeButtons.forEach((button, i) => {
+                        button.setAttribute('data-index', i);
+                    });
+                }
+            });
+        }
+
+        // Функція для створення тимчасового повідомлення
+        function showTempMessage(message, isSuccess = true) {
+            const messageEl = document.createElement('div');
+            messageEl.className = 'temp-message';
+            messageEl.textContent = message;
+
+            if (!isSuccess) {
+                messageEl.style.backgroundColor = 'var(--error-color)';
+            }
+
+            document.body.appendChild(messageEl);
 
             setTimeout(() => {
-                messageDiv.remove();
-            }, 4000); // Автоматичне видалення повідомлення через 4 секунди
+                messageEl.remove();
+            }, 4000); // Видаляємо через 4 секунди
         }
 
-        // Згортання/розгортання розділів форми
-        document.querySelectorAll('.collapsible-header').forEach(function(header) {
-            header.addEventListener('click', function() {
-                const section = this.closest('.collapsible-section');
-                section.classList.toggle('open');
+        // Ініціалізація згортання розділів
+        function initCollapsibleSections() {
+            const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
+            collapsibleHeaders.forEach(header => {
+                header.addEventListener('click', function() {
+                    const section = this.closest('.collapsible-section');
+                    section.classList.toggle('open');
+                });
             });
-        });
+        }
 
-        // Обробник для видалення коментарів
-        document.querySelectorAll('.delete-comment').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                if(confirm('Ви дійсно хочете видалити цей коментар?')) {
-                    const orderId = this.getAttribute('data-id');
-                    const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+        // Функція для зміни теми
+        function initThemeSelector() {
+            const themeOptions = document.querySelectorAll('.theme-option');
+            const htmlElement = document.documentElement;
 
-                    // Відправка AJAX запиту
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('POST', 'dashboard.php', true);
-                    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            // Перевірка збереженої теми
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            htmlElement.setAttribute('data-theme', savedTheme);
 
-                    xhr.onload = function() {
-                        if(xhr.status === 200) {
-                            try {
-                                const response = JSON.parse(xhr.responseText);
-                                if(response.success) {
-                                    // Видалення коментаря з DOM
-                                    const commentSection = btn.closest('.user-comment-section');
-                                    if(commentSection) {
-                                        commentSection.remove();
-                                    }
-                                    showMessage(response.message, true);
+            // Позначення активної теми
+            themeOptions.forEach(option => {
+                if (option.getAttribute('data-theme') === savedTheme) {
+                    option.classList.add('active');
+                } else {
+                    option.classList.remove('active');
+                }
+            });
+
+            // Обробка вибору теми
+            themeOptions.forEach(option => {
+                option.addEventListener('click', function() {
+                    const theme = this.getAttribute('data-theme');
+                    htmlElement.setAttribute('data-theme', theme);
+                    localStorage.setItem('theme', theme);
+
+                    themeOptions.forEach(op => op.classList.remove('active'));
+                    this.classList.add('active');
+                });
+            });
+        }
+
+        // Функція для ініціалізації видалення коментарів користувача
+        function initDeleteComments() {
+            const deleteButtons = document.querySelectorAll('.delete-comment');
+            deleteButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    if (confirm('Ви впевнені, що хочете видалити коментар?')) {
+                        const orderId = this.getAttribute('data-id');
+                        const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+
+                        const formData = new FormData();
+                        formData.append('delete_comment', '1');
+                        formData.append('order_id', orderId);
+                        formData.append('csrf_token', csrfToken);
+
+                        fetch('dashboard.php', {
+                            method: 'POST',
+                            body: formData
+                        })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    // Видаляємо коментар з DOM
+                                    const commentSection = this.closest('.user-comment-section');
+                                    commentSection.innerHTML = '';
+                                    showTempMessage(data.message);
                                 } else {
-                                    showMessage(response.message);
+                                    showTempMessage(data.message, false);
                                 }
-                            } catch(e) {
-                                showMessage('Помилка обробки відповіді сервера');
-                            }
-                        } else {
-                            showMessage('Помилка сервера. Спробуйте ще раз.');
-                        }
-                    };
-
-                    xhr.onerror = function() {
-                        showMessage('Помилка підключення. Перевірте з\'єднання з інтернетом.');
-                    };
-
-                    xhr.send(`delete_comment=1&order_id=${orderId}&csrf_token=${csrfToken}`);
-                }
-            });
-        });
-
-        // AJAX відправка форми коментарів
-        document.getElementById('add-comment-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const form = this;
-            const formData = new FormData(form);
-
-            // Відправка AJAX запиту
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'dashboard.php', true);
-            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-
-            xhr.onload = function() {
-                if(xhr.status === 200) {
-                    try {
-                        const response = JSON.parse(xhr.responseText);
-                        if(response.success) {
-                            // Закрити модальне вікно
-                            document.getElementById('addCommentModal').style.display = 'none';
-                            showMessage(response.message, true);
-
-                            // Оновлення сторінки через 2 секунди
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 2000);
-                        } else {
-                            showMessage(response.message);
-                        }
-                    } catch(e) {
-                        showMessage('Помилка обробки відповіді сервера');
-                    }
-                } else {
-                    showMessage('Помилка сервера. Спробуйте ще раз.');
-                }
-            };
-
-            xhr.send(formData);
-        });
-
-        // Налаштування теми
-        document.querySelectorAll('.theme-option').forEach(function(option) {
-            option.addEventListener('click', function() {
-                const theme = this.getAttribute('data-theme');
-
-                // Видалення активного класу з усіх опцій
-                document.querySelectorAll('.theme-option').forEach(function(opt) {
-                    opt.classList.remove('active');
-                });
-
-                // Додавання активного класу до вибраної опції
-                this.classList.add('active');
-
-                // Встановлення теми
-                document.documentElement.setAttribute('data-theme', theme);
-
-                // Збереження теми в localStorage
-                localStorage.setItem('theme', theme);
-            });
-        });
-
-        // Завантаження теми з localStorage
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', savedTheme);
-
-        // Встановлення активної кнопки теми
-        document.querySelectorAll('.theme-option').forEach(function(option) {
-            if(option.getAttribute('data-theme') === savedTheme) {
-                option.classList.add('active');
-            } else {
-                option.classList.remove('active');
-            }
-        });
-
-        // Для підтримки drag-and-drop для фото профілю
-        const profileDropZone = document.getElementById('profile-drop-zone');
-        const profilePicInput = document.getElementById('profile_pic');
-
-        if(profileDropZone && profilePicInput) {
-            // Відкриття вікна вибору файлів при кліку на зону
-            profileDropZone.addEventListener('click', function() {
-                profilePicInput.click();
-            });
-
-            // Обробка вибору файлу через діалог
-            profilePicInput.addEventListener('change', function() {
-                handleProfilePic(this.files[0]);
-            });
-
-            // Обробка drag-and-drop подій
-            ['dragover', 'dragleave', 'drop'].forEach(eventName => {
-                profileDropZone.addEventListener(eventName, function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    if(eventName === 'dragover') {
-                        profileDropZone.classList.add('active');
-                    } else if(eventName === 'dragleave') {
-                        profileDropZone.classList.remove('active');
-                    } else if(eventName === 'drop') {
-                        profileDropZone.classList.remove('active');
-                        const dt = e.dataTransfer;
-                        if(dt.files.length) {
-                            handleProfilePic(dt.files[0]);
-                        }
-                    }
-                });
-            });
-        }
-
-        // Обробка завантаження фото профілю
-        function handleProfilePic(file) {
-            if(!file) return;
-
-            // Перевірка типу файлу
-            const validTypes = ['image/jpeg', 'image/png', 'image/gif'];
-            const maxFileSize = 2 * 1024 * 1024; // 2 MB
-
-            if(!validTypes.includes(file.type)) {
-                showMessage('Недозволений тип файлу. Дозволені: jpg, jpeg, png, gif');
-                return;
-            }
-
-            if(file.size > maxFileSize) {
-                showMessage('Файл занадто великий. Максимальний розмір: 2MB');
-                return;
-            }
-
-            // Показати попередній перегляд зображення
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const previewImg = document.querySelector('.profile-preview');
-                if(previewImg) {
-                    previewImg.src = e.target.result;
-                } else {
-                    const newPreview = document.createElement('img');
-                    newPreview.src = e.target.result;
-                    newPreview.alt = 'Попередній перегляд фото';
-                    newPreview.className = 'profile-preview';
-                    newPreview.style.maxWidth = '150px';
-                    newPreview.style.borderRadius = '5px';
-                    newPreview.style.marginBottom = '10px';
-                    profileDropZone.parentNode.insertBefore(newPreview, profileDropZone);
-                }
-
-                // Відправка форми автоматично після вибору файлу
-                profileDropZone.closest('form').submit();
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // Автоматична фільтрація при зміні вибору в фільтрах
-        document.querySelectorAll('#filter-form select').forEach(function(select) {
-            select.addEventListener('change', function() {
-                document.getElementById('filter-form').submit();
-            });
-        });
-
-        // Додати перевірку ключових полів при створенні та редагуванні замовлення
-        [document.querySelector('.order-form'), document.getElementById('edit-order-form')].forEach(form => {
-            if(form) {
-                form.addEventListener('submit', function(e) {
-                    // Список обов'язкових полів і їх дружніх назв
-                    const requiredFields = [
-                        {id: form.querySelector('select[name="service"]').id, name: 'Послуга'},
-                        {id: form.querySelector('select[name="device_type"]').id, name: 'Тип пристрою'},
-                        {id: form.querySelector('textarea[name="details"]').id, name: 'Деталі замовлення'},
-                        {id: form.querySelector('input[name="phone"]').id, name: 'Контактний телефон'},
-                        {id: form.querySelector('textarea[name="address"]').id, name: 'Адреса'},
-                        {id: form.querySelector('select[name="delivery_method"]').id, name: 'Спосіб доставки'}
-                    ];
-
-                    // Перевірка кожного поля
-                    let hasErrors = false;
-                    requiredFields.forEach(field => {
-                        const input = document.getElementById(field.id);
-                        if(!input.value.trim()) {
-                            e.preventDefault();
-                            input.style.borderColor = 'var(--error-color)';
-                            hasErrors = true;
-
-                            // Показати повідомлення про помилку
-                            const errorMsg = document.createElement('div');
-                            errorMsg.className = 'input-error';
-                            errorMsg.textContent = `Поле "${field.name}" є обов'язковим`;
-                            errorMsg.style.color = 'var(--error-color)';
-                            errorMsg.style.fontSize = '0.8rem';
-                            errorMsg.style.marginTop = '5px';
-
-                            // Перевірка чи немає вже повідомлення про помилку
-                            const existingError = input.parentNode.querySelector('.input-error');
-                            if(!existingError) {
-                                input.parentNode.appendChild(errorMsg);
-                            }
-
-                            // Видалити помилку при фокусі
-                            input.addEventListener('focus', function() {
-                                this.style.borderColor = '';
-                                const error = this.parentNode.querySelector('.input-error');
-                                if(error) {
-                                    error.remove();
-                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                showTempMessage('Помилка при видаленні коментаря', false);
                             });
-                        }
-                    });
-
-                    if(hasErrors) {
-                        showMessage('Будь ласка, заповніть всі обов\'язкові поля');
                     }
                 });
-            }
-        });
-
-        // Активація вкладок з URL хеша
-        function activateTabFromHash() {
-            const hash = window.location.hash;
-            if(hash) {
-                const tabLink = document.querySelector(`.sidebar-menu a[href="${hash}"]`);
-                if(tabLink) {
-                    // Імітація кліку по вкладці з потрібним ID
-                    tabLink.click();
-                }
-            }
-        }
-
-        // Виклик функції при завантаженні сторінки
-        activateTabFromHash();
-
-        // Зміна хеша при перемиканні вкладок
-        document.querySelectorAll('.sidebar-menu a').forEach(function(link) {
-            link.addEventListener('click', function() {
-                window.location.hash = this.getAttribute('href');
             });
-        });
-
-        // Валідація для форми створення замовлення
-        const validatePhone = (phone) => {
-            // Перевірка формату телефону - приймаємо різні українські формати
-            const patterns = [
-                /^\+380\d{9}$/,           // +380XXXXXXXXX
-                /^0\d{9}$/,              // 0XXXXXXXXX
-                /^80\d{9}$/,             // 80XXXXXXXXX
-                /^\+380 \(\d{2}\) \d{3}-\d{2}-\d{2}$/, // +380 (XX) XXX-XX-XX
-                /^0\d{2} \d{3} \d{4}$/   // 0XX XXX XXXX
-            ];
-
-            return patterns.some(pattern => pattern.test(phone));
-        };
-
-        // Додавання валідації до форм
-        [document.querySelector('.order-form'), document.getElementById('edit-order-form')].forEach(form => {
-            if(form) {
-                const phoneInput = form.querySelector('input[name="phone"]');
-                if(phoneInput) {
-                    phoneInput.addEventListener('blur', function() {
-                        if(!validatePhone(this.value)) {
-                            this.style.borderColor = 'var(--error-color)';
-
-                            // Показати повідомлення про помилку
-                            const errorMsg = document.createElement('div');
-                            errorMsg.className = 'input-error';
-                            errorMsg.textContent = 'Введіть коректний номер телефону';
-                            errorMsg.style.color = 'var(--error-color)';
-                            errorMsg.style.fontSize = '0.8rem';
-                            errorMsg.style.marginTop = '5px';
-
-                            // Перевірка чи немає вже повідомлення про помилку
-                            const existingError = this.parentNode.querySelector('.input-error');
-                            if(!existingError) {
-                                this.parentNode.appendChild(errorMsg);
-                            }
-                        } else {
-                            this.style.borderColor = '';
-                            const error = this.parentNode.querySelector('.input-error');
-                            if(error) {
-                                error.remove();
-                            }
-                        }
-                    });
-                }
-
-                // Додаємо перевірку при відправці форми
-                form.addEventListener('submit', function(e) {
-                    const phoneInput = this.querySelector('input[name="phone"]');
-                    if(phoneInput && !validatePhone(phoneInput.value)) {
-                        e.preventDefault();
-                        showMessage('Будь ласка, введіть коректний номер телефону');
-                    }
-                });
-            }
-        });
-
-        // Швидка дія для копіювання контактних даних з профілю при створенні замовлення
-        const createOrderForm = document.querySelector('.order-form');
-        if(createOrderForm) {
-            // Додамо кнопку швидкого копіювання даних з профілю
-            const contactInfoHeader = createOrderForm.querySelector('.collapsible-header:nth-child(2)');
-            if(contactInfoHeader) {
-                const quickFillBtn = document.createElement('button');
-                quickFillBtn.type = 'button';
-                quickFillBtn.className = 'btn btn-sm';
-                quickFillBtn.style.marginLeft = 'auto';
-                quickFillBtn.style.marginRight = '10px';
-                quickFillBtn.innerHTML = '<i class="fas fa-user-check"></i> Заповнити з профілю';
-
-                contactInfoHeader.insertBefore(quickFillBtn, contactInfoHeader.querySelector('.rotate-icon'));
-
-                // Логіка для швидкого заповнення
-                quickFillBtn.addEventListener('click', function(e) {
-                    e.stopPropagation(); // Щоб не спрацьовувало згортання секції
-
-                    // Отримуємо дані з профілю
-                    const profileFirstName = document.getElementById('first_name').value;
-                    const profileLastName = document.getElementById('last_name').value;
-                    const profileMiddleName = document.getElementById('middle_name').value;
-                    const profilePhone = document.getElementById('profile_phone').value;
-                    const profileAddress = document.getElementById('profile_address').value;
-                    const profileDelivery = document.getElementById('profile_delivery_method').value;
-
-                    // Заповнюємо форму замовлення
-                    createOrderForm.querySelector('input[name="first_name"]').value = profileFirstName;
-                    createOrderForm.querySelector('input[name="last_name"]').value = profileLastName;
-                    createOrderForm.querySelector('input[name="middle_name"]').value = profileMiddleName;
-                    createOrderForm.querySelector('input[name="phone"]').value = profilePhone;
-                    createOrderForm.querySelector('textarea[name="address"]').value = profileAddress;
-                    createOrderForm.querySelector('select[name="delivery_method"]').value = profileDelivery;
-
-                    // Показати повідомлення про успіх
-                    showMessage('Контактні дані заповнено з профілю', true);
-
-                    // Розгорнути секцію, якщо вона згорнута
-                    const section = contactInfoHeader.closest('.collapsible-section');
-                    if(!section.classList.contains('open')) {
-                        section.classList.add('open');
-                    }
-                });
-            }
         }
 
-        // Додаткова логіка для відображення нових повідомлень
-        document.querySelectorAll('.has-new-messages').forEach(function(orderCard) {
-            orderCard.style.transition = 'box-shadow 0.5s';
-            orderCard.style.boxShadow = '0 0 0 2px var(--primary-color)';
+        // Функція для ініціалізації перегляду файлів
+        function initFileViewer() {
+            const viewButtons = document.querySelectorAll('.view-file');
+            const modal = document.getElementById('file-view-modal');
+            const fileNameTitle = document.getElementById('file-name-title');
+            const fileContentContainer = document.getElementById('file-content-container');
+            const closeButton = modal.querySelector('.close-modal');
+
+            viewButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const filePath = this.getAttribute('data-path');
+                    const fileName = this.getAttribute('data-filename');
+                    fileNameTitle.textContent = fileName;
+
+                    // Очищення контейнера
+                    fileContentContainer.innerHTML = '';
+
+                    // Визначення типу файлу
+                    const ext = fileName.split('.').pop().toLowerCase();
+
+                    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
+                        // Зображення
+                        const img = document.createElement('img');
+                        img.src = filePath;
+                        img.alt = fileName;
+                        fileContentContainer.appendChild(img);
+                    } else if (['mp4', 'avi', 'mov'].includes(ext)) {
+                        // Відео
+                        const video = document.createElement('video');
+                        video.src = filePath;
+                        video.controls = true;
+                        fileContentContainer.appendChild(video);
+                    } else if (ext === 'pdf') {
+                        // PDF
+                        const embed = document.createElement('embed');
+                        embed.src = filePath;
+                        embed.type = 'application/pdf';
+                        embed.style.width = '100%';
+                        embed.style.height = '500px';
+                        fileContentContainer.appendChild(embed);
+                    } else if (['doc', 'docx', 'txt'].includes(ext)) {
+                        // Текстові файли або MS Word
+                        const iframe = document.createElement('iframe');
+                        iframe.src = filePath;
+                        iframe.style.width = '100%';
+                        iframe.style.height = '500px';
+                        fileContentContainer.appendChild(iframe);
+
+                        // Альтернативне посилання для скачування
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = filePath;
+                        downloadLink.download = fileName;
+                        downloadLink.textContent = 'Завантажити файл';
+                        downloadLink.className = 'btn';
+                        downloadLink.style.marginTop = '10px';
+                        fileContentContainer.appendChild(downloadLink);
+                    } else {
+                        // Невідомий тип файлу
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = filePath;
+                        downloadLink.download = fileName;
+                        downloadLink.textContent = 'Завантажити файл';
+                        downloadLink.className = 'btn';
+                        fileContentContainer.appendChild(downloadLink);
+                    }
+
+                    modal.style.display = 'block';
+                });
+            });
+
+            // Закриття модального вікна
+            closeButton.addEventListener('click', function() {
+                modal.style.display = 'none';
+            });
+
+            window.addEventListener('click', function(event) {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+
+        // Функція для ініціалізації модальних вікон
+        function initModals() {
+            // Загальна функція для всіх модальних вікон
+            function setupModal(modalId, openButtons, dataAttribute) {
+                const modal = document.getElementById(modalId);
+                const closeButton = modal.querySelector('.close-modal');
+
+                // Відкриття модального вікна
+                openButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const id = this.getAttribute(dataAttribute);
+
+                        if (modalId === 'edit-order-modal') {
+                            document.getElementById('edit-order-id').textContent = '#' + id;
+                            document.getElementById('modal-order-id').value = id;
+
+                            // Заповнення форми даними замовлення
+                            const orderCard = this.closest('.order-card');
+                            const service = orderCard.querySelector('.order-detail:nth-child(1) div:nth-child(2)').textContent.trim();
+                            const deviceType = orderCard.querySelector('.order-detail:nth-child(2) div:nth-child(2)').textContent.trim();
+                            const details = orderCard.querySelector('.order-detail:nth-child(3) div:nth-child(2)').textContent.trim();
+                            const phone = orderCard.querySelector('.order-detail:nth-child(4) div:nth-child(2)').textContent.trim();
+
+                            let address = '';
+                            const addressEl = orderCard.querySelector('.order-detail:nth-child(5) div:nth-child(2)');
+                            if (addressEl) {
+                                address = addressEl.textContent.trim();
+                            }
+
+                            let deliveryMethod = '';
+                            const deliveryEl = orderCard.querySelector('.order-detail:nth-child(6) div:nth-child(2)');
+                            if (deliveryEl) {
+                                deliveryMethod = deliveryEl.textContent.trim();
+                            }
+
+                            let userComment = '';
+                            const userCommentSection = orderCard.querySelector('.user-comment-section .comment');
+                            if (userCommentSection) {
+                                userComment = userCommentSection.textContent.trim();
+                            }
+
+                            document.getElementById('edit-service').value = service;
+                            document.getElementById('edit-device_type').value = deviceType;
+                            document.getElementById('edit-details').value = details;
+                            document.getElementById('edit-phone').value = phone;
+                            document.getElementById('edit-address').value = address;
+                            document.getElementById('edit-delivery_method').value = deliveryMethod;
+                            document.getElementById('edit-user_comment').value = userComment;
+                        } else if (modalId === 'add-comment-modal') {
+                            document.getElementById('comment-order-id').textContent = '#' + id;
+                            document.getElementById('comment-order-id-input').value = id;
+                        }
+
+                        modal.style.display = 'block';
+                    });
+                });
+
+                // Закриття модального вікна
+                closeButton.addEventListener('click', function() {
+                    modal.style.display = 'none';
+                });
+
+                window.addEventListener('click', function(event) {
+                    if (event.target === modal) {
+                        modal.style.display = 'none';
+                    }
+                });
+            }
+
+            // Ініціалізація модальних вікон
+            setupModal('edit-order-modal', document.querySelectorAll('.edit-order'), 'data-id');
+            setupModal('add-comment-modal', document.querySelectorAll('.add-comment'), 'data-id');
+
+            // Ініціалізація Drag & Drop для редагування замовлення
+            initDragAndDrop('edit-drop-zone', 'edit-drop-zone-input', 'edit-file-preview-container', 'edit-dropped_files_data');
+        }
+
+        // AJAX відправка форми додавання коментаря
+        function initAjaxCommentForm() {
+            const form = document.getElementById('add-comment-form');
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                const formData = new FormData(form);
+
+                fetch('dashboard.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                    .then(response => {
+                        document.getElementById('add-comment-modal').style.display = 'none';
+                        showTempMessage('Коментар успішно додано!');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1500);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showTempMessage('Помилка при додаванні коментаря', false);
+                    });
+            });
+        }
+
+        // Перемикання вкладок
+        function initTabs() {
+            // Переключення вкладок навігації
+            const menuTabs = document.querySelectorAll('.sidebar-menu a[data-tab]');
+            const contentTabs = document.querySelectorAll('.main-content > .tab-content');
+
+            menuTabs.forEach(tab => {
+                tab.addEventListener('click', function(e) {
+                    e.preventDefault();
+
+                    const targetTabId = this.getAttribute('data-tab');
+
+                    // Активний пункт меню
+                    menuTabs.forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+
+                    // Активна вкладка контенту
+                    contentTabs.forEach(content => {
+                        content.classList.remove('active');
+                        if (content.id === targetTabId + '-content') {
+                            content.classList.add('active');
+                        }
+                    });
+
+                    // Оновлення URL з хешем
+                    window.location.hash = targetTabId;
+                });
+            });
+
+            // Переключення підвкладок в налаштуваннях
+            const settingsTabs = document.querySelectorAll('.tab');
+            const settingsContents = document.querySelectorAll('#settings-content .tab-content');
+
+            settingsTabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const targetTabId = this.getAttribute('data-target');
+
+                    // Активна вкладка
+                    settingsTabs.forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+
+                    // Активний контент
+                    settingsContents.forEach(content => {
+                        content.classList.remove('active');
+                        if (content.id === targetTabId + '-content') {
+                            content.classList.add('active');
+                        }
+                    });
+                });
+            });
+
+            // Перевірка хешу для активації вкладок
+            if (window.location.hash) {
+                const hash = window.location.hash.substr(1);
+                const targetTab = document.querySelector(`.sidebar-menu a[data-tab="${hash}"]`);
+                if (targetTab) {
+                    targetTab.click();
+                }
+            }
+
+            // Обробка кнопки "Переглянути всі"
+            const viewAllButtons = document.querySelectorAll('.view-all[data-tab]');
+            viewAllButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const targetTabId = this.getAttribute('data-tab');
+                    const targetTab = document.querySelector(`.sidebar-menu a[data-tab="${targetTabId}"]`);
+                    if (targetTab) {
+                        targetTab.click();
+                    }
+                });
+            });
+        }
+
+        // Ініціалізація шзгортання сайдбару
+        function initSidebarToggle() {
+            const toggleButton = document.getElementById('toggle-sidebar');
+            const sidebar = document.getElementById('sidebar');
+
+            toggleButton.addEventListener('click', function() {
+                if (window.innerWidth <= 768) {
+                    sidebar.classList.toggle('expanded');
+                } else {
+                    sidebar.classList.toggle('collapsed');
+                }
+            });
+
+            // Автоматичне згортання на мобільних пристроях
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('expanded');
+            }
+
+            window.addEventListener('resize', function() {
+                if (window.innerWidth <= 768) {
+                    sidebar.classList.remove('collapsed');
+                    if (!sidebar.classList.contains('expanded')) {
+                        sidebar.classList.remove('expanded');
+                    }
+                } else {
+                    sidebar.classList.remove('expanded');
+                }
+            });
+        }
+
+        // Ініціалізація форми профілю для фото
+        function initProfilePicForm() {
+            const profileDropZone = document.getElementById('profile-drop-zone');
+            const profilePicInput = document.getElementById('profile_pic');
+
+            if (!profileDropZone || !profilePicInput) return;
+
+            // Обробка вибору фото через клік
+            profileDropZone.addEventListener('click', () => profilePicInput.click());
+
+            // Обробка вибору фото
+            profilePicInput.addEventListener('change', function() {
+                if (this.files && this.files[0]) {
+                    const file = this.files[0];
+                    const reader = new FileReader();
+
+                    reader.onload = function(e) {
+                        const img = document.querySelector('.profile-preview');
+                        if (img) {
+                            img.src = e.target.result;
+                        }
+                    };
+
+                    reader.readAsDataURL(file);
+
+                    // Автоматичне відправлення форми
+                    this.closest('form').submit();
+                }
+            });
+
+            // Обробка перетягування фото
+            profileDropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                profileDropZone.classList.add('active');
+            });
+
+            profileDropZone.addEventListener('dragleave', () => {
+                profileDropZone.classList.remove('active');
+            });
+
+            profileDropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                profileDropZone.classList.remove('active');
+
+                if (e.dataTransfer.files.length > 0) {
+                    const file = e.dataTransfer.files[0];
+
+                    // Перевірка типу файлу
+                    const validTypes = ['image/jpeg', 'image/png', 'image/gif'];
+                    if (!validTypes.includes(file.type)) {
+                        alert('Будь ласка, виберіть зображення (JPEG, PNG, GIF)');
+                        return;
+                    }
+
+                    // Перевірка розміру файлу (максимум 2MB)
+                    if (file.size > 2 * 1024 * 1024) {
+                        alert('Розмір файлу перевищує 2MB');
+                        return;
+                    }
+
+                    // Показати превью
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const img = document.querySelector('.profile-preview');
+                        if (img) {
+                            img.src = e.target.result;
+                        }
+                    };
+                    reader.readAsDataURL(file);
+
+                    // Встановити файл для форми
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    profilePicInput.files = dataTransfer.files;
+
+                    // Автоматичне відправлення форми
+                    profilePicInput.closest('form').submit();
+                }
+            });
+        }
+
+        // Функція для обробки фільтрації замовлень
+        function initFilters() {
+            const filterForm = document.getElementById('filter-form');
+            const statusSelect = filterForm.querySelector('[name="status"]');
+            const serviceSelect = filterForm.querySelector('[name="service"]');
+            const searchInput = filterForm.querySelector('[name="search"]');
+
+            // Автоматичне відправлення форми при зміні селектів
+            statusSelect.addEventListener('change', () => filterForm.submit());
+            serviceSelect.addEventListener('change', () => filterForm.submit());
+
+            // Відправлення форми при натисненні Enter у полі пошуку
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    filterForm.submit();
+                }
+            });
+        }
+
+        // Ініціалізація всіх компонентів при завантаженні сторінки
+        document.addEventListener("DOMContentLoaded", function() {
+            // Оновлення часу
+            updateLocalTimes();
+            setInterval(updateLocalTimes, 60000); // Оновлення кожну хвилину
+
+            // Ініціалізація інтерфейсу
+            initViewMoreButtons();
+            initCollapsibleSections();
+            initTabs();
+            initSidebarToggle();
+            initThemeSelector();
+            initDeleteComments();
+            initFileViewer();
+            initModals();
+            initAjaxCommentForm();
+            initFilters();
+
+            // Ініціалізація форм
+            initProfilePicForm();
+            initDragAndDrop('drop-zone', 'drop-zone-input', 'file-preview-container', 'dropped_files_data');
         });
-
-        // Поточний час на сервері: <?= date('d.m.Y H:i:s', strtotime('2025-03-19 07:28:11')) ?>
-        // Користувач: <?= htmlspecialchars('1GodofErath') ?>
-
-        // Додаємо унікальний ідентифікатор сесії для запобігання кешування
-        const sessionId = '<?= session_id() ?>';
     </script>
 </body>
 </html>
