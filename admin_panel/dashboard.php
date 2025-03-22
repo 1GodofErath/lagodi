@@ -73,11 +73,12 @@ function sendNotificationEmail($to, $subject, $message, $attachments = []) {
         $mail->SMTPAuth   = true;
         $mail->Username   = 'lagodiy.info@lagodiy.com';
         $mail->Password   = '3zIDVnH#tu?2&uIn';
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS; // Змінено на SMTPS
         $mail->Port       = 465;
 
         // Recipients
         $mail->setFrom('no-reply@lagodiy.com', 'Lagodiy Service');
+        $mail->addAddress($to); // Додано рядок з отримувачем
         $mail->isHTML(true);
 
         // Attachments
@@ -444,7 +445,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_order']) && !$b
 
     // ЗМІНЕНО: Перевірка ліміту замовлень (тільки для активних замовлень)
     if ($active_orders_count >= 5) {
-        $_SESSION['error'] = "Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень, або завершення деяких з них.";
+        $_SESSION['error'] = "Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень.";
         header("Location: dashboard.php");
         exit();
     }
@@ -916,35 +917,33 @@ function processAdminResponse($conn, $user_id, $order_id) {
         $read_stmt->bind_param("i", $comment['id']);
         $read_stmt->execute();
 
-        // Якщо є прикріплений файл, повідомляємо користувача
-        if (!empty($comment['file_attachment'])) {
-            // Отримати email користувача
-            $user_stmt = $conn->prepare("SELECT email FROM users WHERE id = ?");
-            $user_stmt->bind_param("i", $user_id);
-            $user_stmt->execute();
-            $user_result = $user_stmt->get_result();
-            $user_email = $user_result->fetch_assoc()['email'];
+        // Змінено: Видалена перевірка на file_attachment
+        // Отримати email користувача
+        $user_stmt = $conn->prepare("SELECT email FROM users WHERE id = ?");
+        $user_stmt->bind_param("i", $user_id);
+        $user_stmt->execute();
+        $user_result = $user_stmt->get_result();
+        $user_email = $user_result->fetch_assoc()['email'];
 
-            // Підготовка даних для email
-            $subject = "Нова відповідь від адміністратора по замовленню #{$order_id}";
-            $message = "
-                <html>
-                <head>
-                    <title>Нова відповідь адміністратора</title>
-                </head>
-                <body>
-                    <h2>Повідомлення від адміністратора</h2>
-                    <p><strong>Замовлення:</strong> #{$order_id}</p>
-                    <p><strong>Адміністратор:</strong> {$comment['admin_name']}</p>
-                    <p><strong>Повідомлення:</strong><br>{$comment['content']}</p>
-                    <p><strong>Прикріплений файл:</strong> Для перегляду файлу, будь ласка, перейдіть до особистого кабінету</p>
-                </body>
-                </html>
-            ";
+        // Підготовка даних для email
+        $subject = "Нова відповідь від адміністратора по замовленню #{$order_id}";
+        $message = "
+            <html>
+            <head>
+                <title>Нова відповідь адміністратора</title>
+            </head>
+            <body>
+                <h2>Повідомлення від адміністратора</h2>
+                <p><strong>Замовлення:</strong> #{$order_id}</p>
+                <p><strong>Адміністратор:</strong> {$comment['admin_name']}</p>
+                <p><strong>Повідомлення:</strong><br>{$comment['content']}</p>
+                " . (!empty($comment['file_attachment']) ? "<p><strong>Прикріплений файл:</strong> Для перегляду файлу, будь ласка, перейдіть до особистого кабінету</p>" : "") . "
+            </body>
+            </html>
+        ";
 
-            // Відправка email
-            sendNotificationEmail($user_email, $subject, $message);
-        }
+        // Відправка email
+        sendNotificationEmail($user_email, $subject, $message);
     }
 
     return $new_messages;
@@ -1428,7 +1427,7 @@ foreach ($orders as &$order) {
         }
 
         .comment-date {
-            color: rgba(var(--text-color-rgb), 0.6);
+            color: rgba(var( --text-color-rgb), 0.6);
         }
 
         .filters-bar {
@@ -1768,63 +1767,63 @@ foreach ($orders as &$order) {
     </style>
 </head>
 <body>
-    <!-- Сайдбар -->
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <div class="logo">
-                <span class="logo-text">Сервісний центр</span>
-            </div>
-            <button class="toggle-sidebar" id="toggle-sidebar">
-                <i class="fas fa-bars"></i>
-            </button>
+<!-- Сайдбар -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="logo">
+            <span class="logo-text">Сервісний центр</span>
         </div>
-
-        <div class="user-info">
-            <div class="user-avatar">
-                <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
-                    <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю">
-                <?php else: ?>
-                    <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням">
-                <?php endif; ?>
-            </div>
-            <div class="user-name"><?= htmlspecialchars($username) ?></div>
-        </div>
-
-        <ul class="sidebar-menu">
-            <li>
-                <a href="#dashboard" class="active" data-tab="dashboard">
-                    <i class="fas fa-home icon"></i>
-                    <span class="menu-text">Головна</span>
-                </a>
-            </li>
-            <li>
-                <a href="#orders" data-tab="orders">
-                    <i class="fas fa-list-alt icon"></i>
-                    <span class="menu-text">Мої замовлення</span>
-                </a>
-            </li>
-            <li>
-                <a href="#new-order" data-tab="new-order">
-                    <i class="fas fa-plus icon"></i>
-                    <span class="menu-text">Створити замовлення</span>
-                </a>
-            </li>
-            <li>
-                <a href="#settings" data-tab="settings">
-                    <i class="fas fa-cog icon"></i>
-                    <span class="menu-text">Налаштування</span>
-                </a>
-            </li>
-            <li>
-                <a href="../logout.php">
-                    <i class="fas fa-sign-out-alt icon"></i>
-                    <span class="menu-text">Вийти</span>
-                </a>
-            </li>
-        </ul>
+        <button class="toggle-sidebar" id="toggle-sidebar">
+            <i class="fas fa-bars"></i>
+        </button>
     </div>
 
-    <!-- Основний контент -->
+    <div class="user-info">
+        <div class="user-avatar">
+            <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
+                <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю">
+            <?php else: ?>
+                <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням">
+            <?php endif; ?>
+        </div>
+        <div class="user-name"><?= htmlspecialchars($username) ?></div>
+    </div>
+
+    <ul class="sidebar-menu">
+        <li>
+            <a href="#dashboard" class="active" data-tab="dashboard">
+                <i class="fas fa-home icon"></i>
+                <span class="menu-text">Головна</span>
+            </a>
+        </li>
+        <li>
+            <a href="#orders" data-tab="orders">
+                <i class="fas fa-list-alt icon"></i>
+                <span class="menu-text">Мої замовлення</span>
+            </a>
+        </li>
+        <li>
+            <a href="#new-order" data-tab="new-order">
+                <i class="fas fa-plus icon"></i>
+                <span class="menu-text">Створити замовлення</span>
+            </a>
+        </li>
+        <li>
+            <a href="#settings" data-tab="settings">
+                <i class="fas fa-cog icon"></i>
+                <span class="menu-text">Налаштування</span>
+            </a>
+        </li>
+        <li>
+            <a href="../logout.php">
+                <i class="fas fa-sign-out-alt icon"></i>
+                <span class="menu-text">Вийти</span>
+            </a>
+        </li>
+    </ul>
+</div>
+
+<!-- Основний контент -->
 <div class="main-content">
     <div class="header">
         <h1>Особистий кабінет</h1>
@@ -1840,179 +1839,175 @@ foreach ($orders as &$order) {
         </div>
     </div>
 
-<?php if ($block_message): ?>
-    <div class="alert alert-block">
-        <?= htmlspecialchars($block_message) ?>
-        <p>Ваш обліковий запис буде розблоковано: <?= date('d.m.Y H:i', strtotime($_SESSION['blocked_until'])) ?></p>
-    </div>
-<?php endif; ?>
+    <?php if ($block_message): ?>
+        <div class="alert alert-block">
+            <?= htmlspecialchars($block_message) ?>
+            <p>Ваш обліковий запис буде розблоковано: <?= date('d.m.Y H:i', strtotime($_SESSION['blocked_until'])) ?></p>
+        </div>
+    <?php endif; ?>
 
-<?php if ($success): ?>
-    <div class="alert alert-success">
-        <?= htmlspecialchars($success) ?>
-    </div>
-<?php endif; ?>
+    <?php if ($success): ?>
+        <div class="alert alert-success">
+            <?= htmlspecialchars($success) ?>
+        </div>
+    <?php endif; ?>
 
-<?php if ($error): ?>
-    <div class="alert alert-error">
-        <?= htmlspecialchars($error) ?>
-    </div>
-<?php endif; ?>
+    <?php if ($error): ?>
+        <div class="alert alert-error">
+            <?= htmlspecialchars($error) ?>
+        </div>
+    <?php endif; ?>
 
     <!-- Контент вкладок -->
     <div class="tab-content active" id="dashboard-content">
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title">Статистика</h2>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Статистика</h2>
+            </div>
+            <div class="order-stats">
+                <p>Активних замовлень: <?= $active_orders_count ?></p>
+                <p>Всього замовлень: <?= count($orders) ?></p>
+            </div>
         </div>
-        <div class="order-stats">
-            <p>Активних замовлень: <?= $active_orders_count ?></p>
-            <p>Всього замовлень: <?= count($orders) ?></p>
-        </div>
-    </div>
 
-    <div class="card">
-    <div class="card-header">
-        <h2 class="card-title">Останні замовлення</h2>
-        <a href="#orders" class="btn-text view-all" data-tab="orders">Переглянути всі</a>
-    </div>
-<?php
-$recent_orders = array_slice($orders, 0, 3);
-if (!empty($recent_orders)):
-    foreach ($recent_orders as $order):
-        $has_new_messages = !empty($order['new_messages']);
-        ?>
-    <div class="order-card <?= $has_new_messages ? 'has-new-messages' : '' ?>">
-        <div class="order-header">
-            <h3 class="order-id">
-                Замовлення #<?= $order['id'] ?>
-                <?php if ($has_new_messages): ?>
-                    <span class="new-message-indicator" title="Нові повідомлення"></span>
-                <?php endif; ?>
-            </h3>
-            <div class="order-meta">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Останні замовлення</h2>
+                <a href="#orders" class="btn-text view-all" data-tab="orders">Переглянути всі</a>
+            </div>
+            <?php
+            $recent_orders = array_slice($orders, 0, 3);
+            if (!empty($recent_orders)):
+                foreach ($recent_orders as $order):
+                    $has_new_messages = !empty($order['new_messages']);
+                    ?>
+                    <div class="order-card <?= $has_new_messages ? 'has-new-messages' : '' ?>">
+                        <div class="order-header">
+                            <h3 class="order-id">
+                                Замовлення #<?= $order['id'] ?>
+                                <?php if ($has_new_messages): ?>
+                                    <span class="new-message-indicator" title="Нові повідомлення"></span>
+                                <?php endif; ?>
+                            </h3>
+                            <div class="order-meta">
                                     <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
                                         <?= htmlspecialchars($order['status']) ?>
                                     </span>
-                <span class="order-date">
+                                <span class="order-date">
                                         <i class="far fa-calendar-alt"></i>
                                         <span class="local-time" data-utc="<?= $order['created_at'] ?>">
                                             <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
                                         </span>
                                     </span>
-            </div>
-        </div>
-        <div class="order-body">
-        <div class="order-detail">
-            <div class="order-detail-label">Послуга:</div>
-            <div><?= htmlspecialchars($order['service']) ?></div>
-        </div>
-        <div class="order-detail">
-            <div class="order-detail-label">Тип пристрою:</div>
-            <div><?= htmlspecialchars($order['device_type']) ?></div>
-        </div>
-        <div class="order-detail">
-            <div class="order-detail-label">Деталі:</div>
-            <div><?= nl2br(htmlspecialchars($order['details'])) ?></div>
-        </div>
-
-        <?php if (!empty($order['files'])): ?>
-        <div class="order-files">
-        <div class="order-detail-label">Файли:</div>
-        <div class="file-list">
-        <?php foreach ($order['files'] as $file): ?>
-            <div class="file-item">
-            <?php
-            $ext = pathinfo($file['file_name'], PATHINFO_EXTENSION);
-            $icon = 'fa-file';
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
-                $icon = 'fa-file-image';
-            } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
-                $icon = 'fa-file-video';
-            } elseif (in_array($ext, ['pdf'])) {
-                $icon = 'fa-file-image';
-            } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
-                $icon = 'fa-file-video';
-            } elseif (in_array($ext, ['pdf'])) {
-                $icon = 'fa-file-pdf';
-            } elseif (in_array($ext, ['doc', 'docx'])) {
-                $icon = 'fa-file-word';
-            } elseif (in_array($ext, ['txt'])) {
-                $icon = 'fa-file-alt';
-            }
-            ?>
-                <i class="fas <?= $icon ?> file-icon"></i>
-                <span class="file-name"><?= htmlspecialchars($file['file_name']) ?></span>
-                <div class="file-actions">
-                    <button class="btn btn-sm view-file" data-path="../<?= htmlspecialchars($file['file_path']) ?>" data-filename="<?= htmlspecialchars($file['file_name']) ?>">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <a class="btn btn-sm" href="../<?= htmlspecialchars($file['file_path']) ?>" download="<?= htmlspecialchars($file['file_name']) ?>">
-                        <i class="fas fa-download"></i>
-                    </a>
-                </div>
-            </div>
-        <?php endforeach; ?>
-        </div>
-        </div>
-        <?php endif; ?>
-
-            <?php if (!empty($order['comments'])): ?>
-                <div class="comments-section">
-                    <div class="order-detail-label">Коментарі адміністратора:</div>
-                    <?php foreach ($order['comments'] as $comment): ?>
-                        <div class="comment">
-                            <div class="comment-header">
-                                <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
-                                <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
-                                                 <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
-                                             </span>
-                            </div>
-                            <div class="comment-body">
-                                <?= nl2br(htmlspecialchars($comment['content'])) ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
+                        <div class="order-body">
+                            <div class="order-detail">
+                                <div class="order-detail-label">Послуга:</div>
+                                <div><?= htmlspecialchars($order['service']) ?></div>
+                            </div>
+                            <div class="order-detail">
+                                <div class="order-detail-label">Тип пристрою:</div>
+                                <div><?= htmlspecialchars($order['device_type']) ?></div>
+                            </div>
+                            <div class="order-detail">
+                                <div class="order-detail-label">Деталі:</div>
+                                <div><?= nl2br(htmlspecialchars($order['details'])) ?></div>
+                            </div>
 
-            <?php if ($order['user_comment']): ?>
-                <div class="user-comment-section">
-                    <div class="order-detail-label">Ваш коментар:</div>
-                    <div class="comment">
-                        <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
-                        <?php if (!$order['is_closed'] && !$block_message): ?>
-                            <button class="btn btn-sm delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                        <?php endif; ?>
+                            <?php if (!empty($order['files'])): ?>
+                                <div class="order-files">
+                                    <div class="order-detail-label">Файли:</div>
+                                    <div class="file-list">
+                                        <?php foreach ($order['files'] as $file): ?>
+                                            <div class="file-item">
+                                                <?php
+                                                $ext = pathinfo($file['file_name'], PATHINFO_EXTENSION);
+                                                $icon = 'fa-file';
+                                                if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
+                                                    $icon = 'fa-file-image';
+                                                } elseif (in_array($ext, ['mp4', 'avi', 'mov'])) {
+                                                    $icon = 'fa-file-video';
+                                                } elseif (in_array($ext, ['pdf'])) {
+                                                    $icon = 'fa-file-pdf';
+                                                } elseif (in_array($ext, ['doc', 'docx'])) {
+                                                    $icon = 'fa-file-word';
+                                                } elseif (in_array($ext, ['txt'])) {
+                                                    $icon = 'fa-file-alt';
+                                                }
+                                                ?>
+                                                <i class="fas <?= $icon ?> file-icon"></i>
+                                                <span class="file-name"><?= htmlspecialchars($file['file_name']) ?></span>
+                                                <div class="file-actions">
+                                                    <button class="btn btn-sm view-file" data-path="../<?= htmlspecialchars($file['file_path']) ?>" data-filename="<?= htmlspecialchars($file['file_name']) ?>">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                    <a class="btn btn-sm" href="../<?= htmlspecialchars($file['file_path']) ?>" download="<?= htmlspecialchars($file['file_name']) ?>">
+                                                        <i class="fas fa-download"></i>
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($order['comments'])): ?>
+                                <div class="comments-section">
+                                    <div class="order-detail-label">Коментарі адміністратора:</div>
+                                    <?php foreach ($order['comments'] as $comment): ?>
+                                        <div class="comment">
+                                            <div class="comment-header">
+                                                <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
+                                                <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
+                                                 <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
+                                             </span>
+                                            </div>
+                                            <div class="comment-body">
+                                                <?= nl2br(htmlspecialchars($comment['content'])) ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if ($order['user_comment']): ?>
+                                <div class="user-comment-section">
+                                    <div class="order-detail-label">Ваш коментар:</div>
+                                    <div class="comment">
+                                        <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
+                                        <?php if (!$order['is_closed'] && !$block_message): ?>
+                                            <button class="btn btn-sm delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
+
+                            <?php if (!$order['is_closed'] && !$block_message): ?>
+                                <div class="order-actions">
+                                    <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
+                                        <i class="fas fa-edit"></i> Редагувати
+                                    </button>
+                                    <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
+                                        <i class="fas fa-comment"></i> Додати коментар
+                                    </button>
+                                </div>
+                            <?php elseif ($order['is_closed']): ?>
+                                <div class="order-closed-notice">
+                                    <em>Замовлення завершено, редагування недоступне</em>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
-                </div>
-            <?php endif; ?>
-
-            <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
-
-            <?php if (!$order['is_closed'] && !$block_message): ?>
-                <div class="order-actions">
-                    <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
-                        <i class="fas fa-edit"></i> Редагувати
-                    </button>
-                    <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
-                        <i class="fas fa-comment"></i> Додати коментар
-                    </button>
-                </div>
-            <?php elseif ($order['is_closed']): ?>
-                <div class="order-closed-notice">
-                    <em>Замовлення завершено, редагування недоступне</em>
-                </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <p>Ви ще не маєте замовлень. Створіть нове замовлення.</p>
             <?php endif; ?>
         </div>
-    </div>
-    <?php endforeach; ?>
-<?php else: ?>
-    <p>Ви ще не маєте замовлень. Створіть нове замовлення.</p>
-<?php endif; ?>
-    </div>
     </div>
 
     <div class="tab-content" id="orders-content">
@@ -2213,7 +2208,7 @@ if (!empty($recent_orders)):
             <!-- ЗМІНЕНО: Повідомлення про ліміт замовлень -->
             <?php if ($active_orders_count >= 5 && !$block_message): ?>
                 <div class="alert alert-error">
-                    Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень, або завершення деяких з них.
+                    Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень.
                 </div>
             <?php elseif (!$block_message): ?>
                 <form method="post" enctype="multipart/form-data" class="order-form">
@@ -2368,9 +2363,9 @@ if (!empty($recent_orders)):
                         <label>Фото профілю:</label>
                         <div class="profile-pic-container">
                             <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
-                                <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю" class="profile-preview" style="max-width: 150px; border-radius: 5px; margin-bottom: 10px;">
+                                <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю" class="profile-preview" style="max-width: 150px; border-radius: 5px;">
                             <?php else: ?>
-                                <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням" class="profile-preview" style="max-width: 150px; border-radius: 5px; margin-bottom: 10px;">
+                                <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням" class="profile-preview" style="max-width: 150px; border-radius: 5px;">
                             <?php endif; ?>
                         </div>
 
@@ -2494,7 +2489,6 @@ if (!empty($recent_orders)):
             </div>
         </div>
     </div>
-
     <!-- Модальне вікно редагування замовлення -->
     <div class="modal" id="edit-order-modal">
         <div class="modal-content">
