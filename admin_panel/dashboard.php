@@ -38,11 +38,25 @@ if ($block_data && $block_data['blocked_until'] && strtotime($block_data['blocke
 }
 
 // Додаткова інформація користувача
-$stmt = $conn->prepare("SELECT email, first_name, last_name, middle_name, profile_pic, phone, address, delivery_method FROM users WHERE id = ?");
+$stmt = $conn->prepare("SELECT email, first_name, last_name, middle_name, profile_pic, phone, address, delivery_method, notification_preferences FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user_result = $stmt->get_result();
 $user_data = $user_result->fetch_assoc();
+
+// Парсимо налаштування сповіщень або встановлюємо значення за замовчуванням
+if (isset($user_data['notification_preferences'])) {
+    $notification_prefs = json_decode($user_data['notification_preferences'], true);
+} else {
+    $notification_prefs = [
+        'email_notifications' => true,
+        'email_order_status' => true,
+        'email_new_comment' => true,
+        'push_notifications' => false,
+        'push_order_status' => false,
+        'push_new_comment' => false
+    ];
+}
 
 // Обробка повідомлень з сесії
 $success = $_SESSION['success'] ?? '';
@@ -73,11 +87,12 @@ function sendNotificationEmail($to, $subject, $message, $attachments = []) {
         $mail->SMTPAuth   = true;
         $mail->Username   = 'lagodiy.info@lagodiy.com';
         $mail->Password   = '3zIDVnH#tu?2&uIn';
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
         $mail->Port       = 465;
 
         // Recipients
         $mail->setFrom('no-reply@lagodiy.com', 'Lagodiy Service');
+        $mail->addAddress($to);
         $mail->isHTML(true);
 
         // Attachments
@@ -102,7 +117,301 @@ function sendNotificationEmail($to, $subject, $message, $attachments = []) {
     }
 }
 
-// ЗМІНЕНО: Перевірка кількості активних замовлень зі статусами "новий", "в роботі", "очікує товар"
+// Перевірка чи існує таблиця сповіщень і створення її якщо потрібно
+function ensureNotificationsTable($conn) {
+    try {
+        $conn->query("
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                order_id INT NULL,
+                type VARCHAR(50) NOT NULL, -- 'comment', 'status', 'system', etc.
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                icon VARCHAR(100) DEFAULT 'fa-bell',
+                link VARCHAR(255) NULL,
+                is_read TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NULL,
+                metadata TEXT NULL, -- JSON для додаткових даних
+                INDEX (user_id, is_read),
+                INDEX (created_at),
+                INDEX (type)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+
+        // Додамо таблицю для push-підписок
+        $conn->query("
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                endpoint VARCHAR(500) NOT NULL,
+                p256dh VARCHAR(255) NOT NULL,
+                auth VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+                browser VARCHAR(100) NULL,
+                device_type VARCHAR(50) NULL,
+                UNIQUE(user_id, endpoint),
+                INDEX (user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Error creating notifications table: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Переконаємося, що таблиці сповіщень існують
+ensureNotificationsTable($conn);
+
+// Функція для створення сповіщення
+function createNotification($conn, $user_id, $type, $title, $message, $order_id = null, $icon = 'fa-bell', $link = null, $expires_days = 30, $metadata = null) {
+    try {
+        $expires_at = date('Y-m-d H:i:s', strtotime("+{$expires_days} days"));
+
+        $metadata_json = null;
+        if ($metadata !== null) {
+            $metadata_json = json_encode($metadata);
+        }
+
+        $stmt = $conn->prepare("
+            INSERT INTO notifications 
+            (user_id, type, title, message, order_id, icon, link, expires_at, metadata) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->bind_param("isssssss", $user_id, $type, $title, $message, $order_id, $icon, $link, $expires_at, $metadata_json);
+        $result = $stmt->execute();
+
+        return $result ? $conn->insert_id : false;
+    } catch (Exception $e) {
+        error_log("Error creating notification: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Функція для отримання сповіщень користувача
+function getUserNotifications($conn, $user_id, $limit = 20, $offset = 0, $filter = '') {
+    try {
+        $query = "
+            SELECT * FROM notifications 
+            WHERE user_id = ? 
+            AND (expires_at IS NULL OR expires_at > NOW())
+        ";
+
+        // Додаємо фільтр за типом (прочитані/непрочитані)
+        if ($filter === 'unread') {
+            $query .= " AND is_read = 0";
+        } else if ($filter === 'read') {
+            $query .= " AND is_read = 1";
+        }
+
+        // Сортування та обмеження
+        $query .= " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("iii", $user_id, $limit, $offset);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        $notifications = [];
+        while ($row = $result->fetch_assoc()) {
+            // Розкодуємо метадані, якщо вони є
+            if (!empty($row['metadata'])) {
+                $row['metadata'] = json_decode($row['metadata'], true);
+            }
+            $notifications[] = $row;
+        }
+
+        return $notifications;
+    } catch (Exception $e) {
+        error_log("Error getting notifications: " . $e->getMessage());
+        return [];
+    }
+}
+
+// Функція для підрахунку непрочитаних сповіщень
+function countUnreadNotifications($conn, $user_id) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) as count FROM notifications 
+            WHERE user_id = ? AND is_read = 0 
+            AND (expires_at IS NULL OR expires_at > NOW())
+        ");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result->fetch_assoc();
+
+        return $row['count'] ?? 0;
+    } catch (Exception $e) {
+        error_log("Error counting unread notifications: " . $e->getMessage());
+        return 0;
+    }
+}
+
+// Функція для позначення сповіщень як прочитаних
+function markNotificationsAsRead($conn, $user_id, $notification_id = null) {
+    try {
+        if ($notification_id) {
+            // Позначаємо конкретне сповіщення як прочитане
+            $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?");
+            $stmt->bind_param("ii", $notification_id, $user_id);
+        } else {
+            // Позначаємо всі сповіщення як прочитані
+            $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0");
+            $stmt->bind_param("i", $user_id);
+        }
+
+        $stmt->execute();
+        return $stmt->affected_rows;
+    } catch (Exception $e) {
+        error_log("Error marking notifications as read: " . $e->getMessage());
+        return 0;
+    }
+}
+
+// Функція для позначення сповіщень замовлення як прочитаних
+function markOrderNotificationsAsRead($conn, $user_id, $order_id) {
+    try {
+        $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND order_id = ? AND is_read = 0");
+        $stmt->bind_param("ii", $user_id, $order_id);
+        $stmt->execute();
+        return $stmt->affected_rows;
+    } catch (Exception $e) {
+        error_log("Error marking order notifications as read: " . $e->getMessage());
+        return 0;
+    }
+}
+
+// Функція для надсилання push-сповіщень
+function sendPushNotification($conn, $user_id, $title, $body, $url = null, $icon = null) {
+    // Ця функція буде реалізована через WebPush або FCM API
+    // Тут потрібно отримати підписки користувача з бази даних і надіслати їм повідомлення
+    // Приклад реалізації буде надано пізніше
+
+    // Отримуємо всі підписки користувача
+    $stmt = $conn->prepare("SELECT * FROM push_subscriptions WHERE user_id = ?");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    // Тут буде код для надсилання push-повідомлення через веб-push або FCM
+    // Зараз просто логуємо, що спроба була
+    logUserAction($conn, $user_id, 'push_notification_attempted', "Title: $title, Body: $body");
+
+    return true;
+}
+
+// Обробка запитів для сповіщень через AJAX
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    // Обробка позначення сповіщень як прочитаних
+    if (isset($_POST['mark_notification_read'])) {
+        $notification_id = $_POST['notification_id'] ?? null;
+        $result = markNotificationsAsRead($conn, $user_id, $notification_id);
+        echo json_encode(['success' => true, 'affected' => $result]);
+        exit();
+    }
+
+    // Обробка позначення всіх сповіщень як прочитаних
+    if (isset($_POST['mark_all_notifications_read'])) {
+        $result = markNotificationsAsRead($conn, $user_id);
+        echo json_encode(['success' => true, 'affected' => $result]);
+        exit();
+    }
+
+    // Обробка позначення сповіщень замовлення як прочитаних
+    if (isset($_POST['mark_order_notifications_read'])) {
+        $order_id = $_POST['order_id'] ?? 0;
+        $result = markOrderNotificationsAsRead($conn, $user_id, $order_id);
+        echo json_encode(['success' => true, 'affected' => $result]);
+        exit();
+    }
+
+    // Обробка збереження налаштувань сповіщень
+    if (isset($_POST['save_notification_preferences'])) {
+        $email_notifications = isset($_POST['email_notifications']) ? 1 : 0;
+        $email_order_status = isset($_POST['email_order_status']) ? 1 : 0;
+        $email_new_comment = isset($_POST['email_new_comment']) ? 1 : 0;
+        $push_notifications = isset($_POST['push_notifications']) ? 1 : 0;
+        $push_order_status = isset($_POST['push_order_status']) ? 1 : 0;
+        $push_new_comment = isset($_POST['push_new_comment']) ? 1 : 0;
+
+        $preferences = [
+            'email_notifications' => (bool)$email_notifications,
+            'email_order_status' => (bool)$email_order_status,
+            'email_new_comment' => (bool)$email_new_comment,
+            'push_notifications' => (bool)$push_notifications,
+            'push_order_status' => (bool)$push_order_status,
+            'push_new_comment' => (bool)$push_new_comment
+        ];
+
+        $preferences_json = json_encode($preferences);
+
+        // Оновлюємо налаштування в базі даних
+        $stmt = $conn->prepare("UPDATE users SET notification_preferences = ? WHERE id = ?");
+        $stmt->bind_param("si", $preferences_json, $user_id);
+
+        if ($stmt->execute()) {
+            $notification_prefs = $preferences; // Оновлюємо локальну змінну
+            echo json_encode(['success' => true, 'message' => 'Налаштування сповіщень успішно збережено']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Помилка збереження налаштувань']);
+        }
+        exit();
+    }
+
+    // Обробка запиту на збереження push-підписки
+    if (isset($_POST['save_push_subscription'])) {
+        $data = json_decode(file_get_contents('php://input'), true);
+
+        if (!empty($data['endpoint']) && !empty($data['keys']['p256dh']) && !empty($data['keys']['auth'])) {
+            $endpoint = $data['endpoint'];
+            $p256dh = $data['keys']['p256dh'];
+            $auth = $data['keys']['auth'];
+            $browser = $_POST['browser'] ?? null;
+            $device_type = $_POST['device_type'] ?? null;
+
+            // Перевіряємо чи існує вже така підписка
+            $stmt = $conn->prepare("SELECT id FROM push_subscriptions WHERE user_id = ? AND endpoint = ?");
+            $stmt->bind_param("is", $user_id, $endpoint);
+            $stmt->execute();
+            $result = $stmt->get_result();
+
+            if ($result->num_rows > 0) {
+                // Оновлюємо існуючу підписку
+                $sub_id = $result->fetch_assoc()['id'];
+                $stmt = $conn->prepare("UPDATE push_subscriptions SET p256dh = ?, auth = ?, browser = ?, device_type = ?, updated_at = NOW() WHERE id = ?");
+                $stmt->bind_param("ssssi", $p256dh, $auth, $browser, $device_type, $sub_id);
+            } else {
+                // Створюємо нову підписку
+                $stmt = $conn->prepare("INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, browser, device_type) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("isssss", $user_id, $endpoint, $p256dh, $auth, $browser, $device_type);
+            }
+
+            if ($stmt->execute()) {
+                // Оновлюємо налаштування користувача
+                $notification_prefs['push_notifications'] = true;
+                $preferences_json = json_encode($notification_prefs);
+
+                $stmt = $conn->prepare("UPDATE users SET notification_preferences = ? WHERE id = ?");
+                $stmt->bind_param("si", $preferences_json, $user_id);
+                $stmt->execute();
+
+                echo json_encode(['success' => true, 'message' => 'Підписка на push-сповіщення успішно збережена']);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Помилка збереження підписки']);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Недостатньо даних для підписки']);
+        }
+        exit();
+    }
+}
+
+// Перевірка кількості активних замовлень зі статусами "новий", "в роботі", "очікує товар"
 $stmt = $conn->prepare("SELECT COUNT(*) as active_orders FROM orders WHERE user_id = ? AND is_closed = 0 AND (status = 'Нове' OR status = 'В роботі' OR status = 'Очікує товар')");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
@@ -252,6 +561,17 @@ if (isset($_POST['update_profile']) && !$block_message) {
         $user_data['address'] = $address;
         $user_data['delivery_method'] = $delivery_method;
         logUserAction($conn, $user_id, 'update_profile', 'Оновлено персональні дані');
+
+        // Додаємо системне сповіщення про оновлення профілю
+        createNotification(
+            $conn,
+            $user_id,
+            'system',
+            'Профіль оновлено',
+            'Ваші особисті дані були успішно оновлені.',
+            null,
+            'fa-user-edit'
+        );
     } else {
         $_SESSION['error'] = "Помилка оновлення профілю: " . $conn->error;
     }
@@ -314,6 +634,43 @@ if (isset($_POST['update_email']) && !$block_message) {
         $user_data['email'] = $new_email;
         $_SESSION['success'] = "Email успішно оновлено!";
         logUserAction($conn, $user_id, 'update_email', 'Змінено email з ' . $old_email . ' на ' . $new_email);
+
+        // Додаємо системне сповіщення про зміну email
+        createNotification(
+            $conn,
+            $user_id,
+            'system',
+            'Email змінено',
+            'Вашу адресу електронної пошти було успішно змінено на ' . $new_email,
+            null,
+            'fa-envelope'
+        );
+
+        // Відправляємо email-повідомлення на новий email
+        if ($notification_prefs['email_notifications']) {
+            $subject = "Зміна електронної пошти на сайті Lagodiy";
+            $message = "
+                <html>
+                <head>
+                    <title>Зміна email адреси</title>
+                </head>
+                <body>
+                    <h2>Вітаємо!</h2>
+                    <p>Вашу електронну адресу було успішно змінено з {$old_email} на {$new_email}.</p>
+                    <p>Якщо ви не робили цієї зміни, будь ласка, негайно зв'яжіться з адміністрацією сайту.</p>
+                    <p>З повагою,<br>Команда Lagodiy</p>
+                </body>
+                </html>
+            ";
+
+            // Відправка на стару адресу
+            if (!empty($old_email)) {
+                sendNotificationEmail($old_email, $subject, $message);
+            }
+
+            // Відправка на нову адресу
+            sendNotificationEmail($new_email, $subject, $message);
+        }
     } else {
         $_SESSION['error'] = "Помилка оновлення email: " . $conn->error;
     }
@@ -370,6 +727,17 @@ if (isset($_POST['update_username']) && !$block_message) {
         $_SESSION['username'] = $new_username;
         $_SESSION['success'] = "Логін успішно оновлено!";
         logUserAction($conn, $user_id, 'update_username', 'Змінено логін з ' . $old_username . ' на ' . $new_username);
+
+        // Додаємо системне сповіщення про зміну логіна
+        createNotification(
+            $conn,
+            $user_id,
+            'system',
+            'Логін змінено',
+            'Ваш логін успішно змінено з ' . $old_username . ' на ' . $new_username,
+            null,
+            'fa-user-edit'
+        );
     } else {
         $_SESSION['error'] = "Помилка оновлення логіна: " . $conn->error;
     }
@@ -427,6 +795,38 @@ if (isset($_POST['update_password']) && !$block_message) {
     if ($stmt->execute()) {
         $_SESSION['success'] = "Пароль успішно оновлено!";
         logUserAction($conn, $user_id, 'update_password', 'Оновлено пароль');
+
+        // Додаємо системне сповіщення про зміну пароля
+        createNotification(
+            $conn,
+            $user_id,
+            'system',
+            'Пароль змінено',
+            'Ваш пароль було успішно змінено. Якщо ви не робили цієї зміни, негайно зв\'яжіться з адміністрацією.',
+            null,
+            'fa-lock'
+        );
+
+        // Відправляємо email про зміну пароля
+        if ($notification_prefs['email_notifications']) {
+            $email = $user_data['email'];
+            $subject = "Зміна пароля на сайті Lagodiy";
+            $message = "
+                <html>
+                <head>
+                    <title>Зміна пароля</title>
+                </head>
+                <body>
+                    <h2>Вітаємо!</h2>
+                    <p>Ваш пароль на сайті Lagodiy було успішно змінено.</p>
+                    <p>Якщо ви не робили цієї зміни, будь ласка, негайно зв'яжіться з адміністрацією сайту.</p>
+                    <p>З повагою,<br>Команда Lagodiy</p>
+                </body>
+                </html>
+            ";
+
+            sendNotificationEmail($email, $subject, $message);
+        }
     } else {
         $_SESSION['error'] = "Помилка оновлення пароля: " . $conn->error;
     }
@@ -442,7 +842,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_order']) && !$b
         die("Невалідний CSRF токен!");
     }
 
-    // ЗМІНЕНО: Перевірка ліміту замовлень (тільки для активних замовлень)
+    // Перевірка ліміту замовлень (тільки для активних замовлень)
     if ($active_orders_count >= 5) {
         $_SESSION['error'] = "Ви досягли максимальної кількості активних замовлень (5). Будь ласка, дочекайтесь обробки існуючих замовлень.";
         header("Location: dashboard.php");
@@ -474,6 +874,43 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_order']) && !$b
             $order_id = $stmt->insert_id;
             $_SESSION['success'] = "Замовлення #" . $order_id . " успішно створено!";
             logUserAction($conn, $user_id, 'create_order', 'Створено замовлення #' . $order_id);
+
+            // Додаємо сповіщення про створення замовлення
+            createNotification(
+                $conn,
+                $user_id,
+                'order',
+                'Нове замовлення #' . $order_id,
+                'Ваше замовлення #' . $order_id . ' успішно створено. Статус: Нове',
+                $order_id,
+                'fa-file-alt',
+                'dashboard.php#orders'
+            );
+
+            // Відправляємо email про створення замовлення
+            if ($notification_prefs['email_notifications'] && $notification_prefs['email_order_status']) {
+                $email = $user_data['email'];
+                $subject = "Нове замовлення #" . $order_id . " на сайті Lagodiy";
+                $message = "
+                    <html>
+                    <head>
+                        <title>Нове замовлення #" . $order_id . "</title>
+                    </head>
+                    <body>
+                        <h2>Нове замовлення #" . $order_id . "</h2>
+                        <p>Вітаємо! Ваше замовлення успішно створено.</p>
+                        <p><strong>Послуга:</strong> " . htmlspecialchars($service) . "</p>
+                        <p><strong>Тип пристрою:</strong> " . htmlspecialchars($device_type) . "</p>
+                        <p><strong>Деталі:</strong> " . htmlspecialchars($details) . "</p>
+                        <p><strong>Спосіб доставки:</strong> " . htmlspecialchars($delivery_method) . "</p>
+                        <p>Ви можете переглянути статус замовлення в <a href='https://lagodiy.com/admin_panel/dashboard.php'>особистому кабінеті</a>.</p>
+                        <p>З повагою,<br>Команда Lagodiy</p>
+                    </body>
+                    </html>
+                ";
+
+                sendNotificationEmail($email, $subject, $message);
+            }
 
             // Обробка завантаження файлів
             $uploaded_files = [];
@@ -609,6 +1046,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_order']) && !$blo
             $_SESSION['success'] = "Замовлення #" . $order_id . " успішно оновлено!";
             logUserAction($conn, $user_id, 'edit_order', 'Оновлено замовлення #' . $order_id);
 
+            // Додаємо сповіщення про оновлення замовлення
+            createNotification(
+                $conn,
+                $user_id,
+                'order',
+                'Замовлення #' . $order_id . ' оновлено',
+                'Дані замовлення #' . $order_id . ' були успішно оновлені.',
+                $order_id,
+                'fa-edit',
+                'dashboard.php#orders'
+            );
+
             // Обробка нових файлів
             $uploaded_files = [];
 
@@ -733,6 +1182,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_comment']) && !$bl
         if ($stmt->execute()) {
             $_SESSION['success'] = "Коментар успішно додано!";
             logUserAction($conn, $user_id, 'add_comment', 'Додано коментар до замовлення #' . $order_id);
+
+            // Додаємо сповіщення про додавання коментаря
+            createNotification(
+                $conn,
+                $user_id,
+                'order',
+                'Коментар додано',
+                'Ви додали коментар до замовлення #' . $order_id,
+                $order_id,
+                'fa-comment',
+                'dashboard.php#orders'
+            );
 
             // Ajax відповідь для автоматичного зникання через 2 секунди
             if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
@@ -871,13 +1332,11 @@ try {
         }
     }
 
-    // НОВА ФУНКЦІОНАЛЬНІСТЬ: Отримання непрочитаних сповіщень (нові коментарі адміністратора та зміни статусу)
+    // Отримання непрочитаних сповіщень для кожного замовлення
     if (!empty($order_ids)) {
         $placeholders = str_repeat('?,', count($order_ids) - 1) . '?';
-
-        // Отримуємо непрочитані коментарі
         $notifications_query = "SELECT order_id, COUNT(*) as unread_count FROM notifications 
-                               WHERE order_id IN ($placeholders) AND user_id = ? AND is_read = 0 AND type = 'comment'
+                               WHERE order_id IN ($placeholders) AND user_id = ? AND is_read = 0
                                GROUP BY order_id";
 
         $params = array_merge($order_ids, [$user_id]);
@@ -889,21 +1348,7 @@ try {
         $notifications_result = $stmt->get_result();
 
         while ($notification = $notifications_result->fetch_assoc()) {
-            $grouped_orders[$notification['order_id']]['unread_notifications'] += $notification['unread_count'];
-        }
-
-        // Отримуємо непрочитані зміни статусу
-        $status_query = "SELECT order_id, COUNT(*) as unread_count FROM notifications 
-                        WHERE order_id IN ($placeholders) AND user_id = ? AND is_read = 0 AND type = 'status'
-                        GROUP BY order_id";
-
-        $stmt = $conn->prepare($status_query);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $status_result = $stmt->get_result();
-
-        while ($status = $status_result->fetch_assoc()) {
-            $grouped_orders[$status['order_id']]['unread_notifications'] += $status['unread_count'];
+            $grouped_orders[$notification['order_id']]['unread_notifications'] = $notification['unread_count'];
         }
     }
 
@@ -932,66 +1377,119 @@ try {
         $services[] = $row['service'];
     }
 } catch (Exception $e) {
-    // Просто ігноруємо помилку фільтрів
+    // Ігноруємо помилку фільтрів
 }
 
-// ЗМІНЕНО: Функція для обробки відповідей адміністратора та статусу замовлення
-function processNotifications($conn, $user_id, $order_id) {
-    // Створюємо таблицю notifications, якщо вона ще не існує
-    try {
-        $conn->query("
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                order_id INT NOT NULL,
-                type VARCHAR(20) NOT NULL, -- 'comment' або 'status'
-                content TEXT,
-                old_status VARCHAR(50),
-                new_status VARCHAR(50),
-                is_read TINYINT(1) DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX (user_id, order_id, is_read)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        ");
-    } catch (Exception $e) {
-        // Ігноруємо помилку, якщо таблиця вже існує
-    }
+// Отримання сповіщень для користувача
+$user_notifications = getUserNotifications($conn, $user_id, 20);
+$unread_notifications_count = countUnreadNotifications($conn, $user_id);
 
+// Обробка зміни статусу замовлення
+function checkOrderStatusChanges($conn, $user_id, $order_id, $notification_prefs) {
     // Отримуємо поточний статус замовлення
-    $stmt = $conn->prepare("SELECT status FROM orders WHERE id = ?");
+    $stmt = $conn->prepare("SELECT status, service FROM orders WHERE id = ?");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
-    $order_result = $stmt->get_result();
-    $current_status = $order_result->fetch_assoc()['status'] ?? '';
+    $result = $stmt->get_result();
+    $order_data = $result->fetch_assoc();
+    $current_status = $order_data['status'] ?? '';
+    $service = $order_data['service'] ?? '';
 
-    // Перевіряємо, чи був змінений статус замовлення
-    $stmt = $conn->prepare("SELECT old_status, new_status FROM notifications 
-                           WHERE order_id = ? AND user_id = ? AND type = 'status' 
-                           ORDER BY created_at DESC LIMIT 1");
+    // Перевіряємо, чи був змінений статус замовлення (останнє сповіщення про статус)
+    $stmt = $conn->prepare("SELECT metadata FROM notifications 
+                            WHERE order_id = ? AND user_id = ? AND type = 'status_change' 
+                            ORDER BY created_at DESC LIMIT 1");
     $stmt->bind_param("ii", $order_id, $user_id);
     $stmt->execute();
-    $status_result = $stmt->get_result();
-    $status_data = $status_result->fetch_assoc();
+    $result = $stmt->get_result();
+    $notif_data = $result->fetch_assoc();
 
-    $last_known_status = $status_data['new_status'] ?? null;
+    $metadata = $notif_data ? json_decode($notif_data['metadata'], true) : null;
+    $last_known_status = $metadata ? ($metadata['new_status'] ?? null) : null;
 
     // Якщо статус змінено або це перше відстеження статусу
     if ($last_known_status !== $current_status) {
         // Додаємо нове сповіщення про зміну статусу
         $old_status = $last_known_status ?? 'Не встановлено';
-        $stmt = $conn->prepare("INSERT INTO notifications (user_id, order_id, type, old_status, new_status) 
-                               VALUES (?, ?, 'status', ?, ?)");
-        $stmt->bind_param("iiss", $user_id, $order_id, $old_status, $current_status);
-        $stmt->execute();
+
+        $title = "Статус замовлення #$order_id змінено";
+        $message = "Статус вашого замовлення #$order_id змінено з \"$old_status\" на \"$current_status\"";
+
+        $metadata = [
+            'old_status' => $old_status,
+            'new_status' => $current_status
+        ];
+
+        createNotification(
+            $conn,
+            $user_id,
+            'status_change',
+            $title,
+            $message,
+            $order_id,
+            'fa-exchange-alt',
+            "dashboard.php#orders",
+            30,
+            $metadata
+        );
+
+        // Відправляємо email про зміну статусу
+        if ($notification_prefs['email_notifications'] && $notification_prefs['email_order_status']) {
+            // Отримуємо email користувача
+            $stmt = $conn->prepare("SELECT email FROM users WHERE id = ?");
+            $stmt->bind_param("i", $user_id);
+            $stmt->execute();
+            $user_result = $stmt->get_result();
+            $user_email = $user_result->fetch_assoc()['email'] ?? '';
+
+            if (!empty($user_email)) {
+                $subject = "Зміна статусу замовлення #$order_id";
+                $message = "
+                    <html>
+                    <head>
+                        <title>Зміна статусу замовлення #$order_id</title>
+                    </head>
+                    <body>
+                        <h2>Зміна статусу замовлення #$order_id</h2>
+                        <p>Доброго дня!</p>
+                        <p>Інформуємо вас про зміну статусу вашого замовлення:</p>
+                        <p><strong>Послуга:</strong> $service</p>
+                        <p><strong>Старий статус:</strong> $old_status</p>
+                        <p><strong>Новий статус:</strong> $current_status</p>
+                        <p>Ви можете переглянути деталі замовлення в <a href='https://lagodiy.com/admin_panel/dashboard.php'>особистому кабінеті</a>.</p>
+                        <p>З повагою,<br>Команда Lagodiy</p>
+                    </body>
+                    </html>
+                ";
+
+                sendNotificationEmail($user_email, $subject, $message);
+            }
+        }
+
+        // Відправляємо push-сповіщення, якщо користувач підписаний
+        if ($notification_prefs['push_notifications'] && $notification_prefs['push_order_status']) {
+            $title = "Статус замовлення #$order_id змінено";
+            $body = "Новий статус: $current_status";
+            $url = "https://lagodiy.com/admin_panel/dashboard.php#orders";
+
+            sendPushNotification($conn, $user_id, $title, $body, $url);
+        }
+
+        return true;
     }
 
+    return false;
+}
+
+// Перевірка нових коментарів адміністратора
+function checkNewAdminComments($conn, $user_id, $order_id, $notification_prefs) {
     // Перевіряємо наявність нових коментарів адміністратора
     $stmt = $conn->prepare("
-        SELECT c.id, c.content, c.created_at, u.username as admin_name, c.file_attachment 
+        SELECT c.id, c.content, c.created_at, u.username as admin_name, c.file_attachment,
+               (SELECT COUNT(*) FROM notifications WHERE type = 'admin_comment' AND user_id = ? AND metadata LIKE CONCAT('%\"comment_id\":\"', c.id, '\"%')) as is_notified
         FROM comments c 
         JOIN users u ON c.user_id = u.id 
-        LEFT JOIN notifications n ON c.id = CAST(n.content AS UNSIGNED) AND n.type = 'comment' AND n.user_id = ?
-        WHERE c.order_id = ? AND n.id IS NULL
+        WHERE c.order_id = ?
         ORDER BY c.created_at DESC
     ");
     $stmt->bind_param("ii", $user_id, $order_id);
@@ -999,1154 +1497,1587 @@ function processNotifications($conn, $user_id, $order_id) {
     $result = $stmt->get_result();
 
     $new_comments = [];
+    $new_comments_count = 0;
+
     while ($comment = $result->fetch_assoc()) {
-        $new_comments[] = $comment;
+        // Якщо про цей коментар ще не було сповіщення
+        if ($comment['is_notified'] == 0) {
+            $new_comments[] = $comment;
+            $new_comments_count++;
 
-        // Додаємо сповіщення про новий коментар
-        $stmt = $conn->prepare("INSERT INTO notifications (user_id, order_id, type, content) VALUES (?, ?, 'comment', ?)");
-        $comment_id = (string)$comment['id'];
-        $stmt->bind_param("iis", $user_id, $order_id, $comment_id);
-        $stmt->execute();
+            // Створюємо сповіщення про новий коментар
+            $title = "Новий коментар до замовлення #$order_id";
+            $message = "Адміністратор ({$comment['admin_name']}) додав новий коментар до вашого замовлення #$order_id";
 
-        // Відправляємо email про новий коментар, якщо є прикріплений файл
-        if (!empty($comment['file_attachment'])) {
-            // Отримуємо email користувача
-            $user_stmt = $conn->prepare("SELECT email FROM users WHERE id = ?");
-            $user_stmt->bind_param("i", $user_id);
-            $user_stmt->execute();
-            $user_result = $user_stmt->get_result();
-            $user_email = $user_result->fetch_assoc()['email'] ?? '';
+            $metadata = [
+                'comment_id' => $comment['id'],
+                'admin_name' => $comment['admin_name'],
+                'has_attachment' => !empty($comment['file_attachment'])
+            ];
 
-            if (!empty($user_email)) {
-                // Підготовка даних для email
-                $subject = "Нова відповідь від адміністратора по замовленню #{$order_id}";
-                $message = "
-                    <html>
-                    <head>
-                        <title>Нова відповідь адміністратора</title>
-                    </head>
-                    <body>
-                        <h2>Повідомлення від адміністратора</h2>
-                        <p><strong>Замовлення:</strong> #{$order_id}</p>
-                        <p><strong>Адміністратор:</strong> {$comment['admin_name']}</p>
-                        <p><strong>Повідомлення:</strong><br>{$comment['content']}</p>
-                        <p><strong>Прикріплений файл:</strong> Для перегляду файлу, будь ласка, перейдіть до особистого кабінету</p>
-                    </body>
-                    </html>
-                ";
+            createNotification(
+                $conn,
+                $user_id,
+                'admin_comment',
+                $title,
+                $message,
+                $order_id,
+                'fa-comment-dots',
+                "dashboard.php#orders",
+                30,
+                $metadata
+            );
 
-                // Відправка email
-                sendNotificationEmail($user_email, $subject, $message);
+            // Відправляємо email про новий коментар
+            if ($notification_prefs['email_notifications'] && $notification_prefs['email_new_comment']) {
+                // Отримуємо email та інформацію про замовлення
+                $stmt2 = $conn->prepare("
+                    SELECT u.email, o.service
+                    FROM users u
+                    JOIN orders o ON u.id = o.user_id
+                    WHERE u.id = ? AND o.id = ?
+                ");
+                $stmt2->bind_param("ii", $user_id, $order_id);
+                $stmt2->execute();
+                $user_result = $stmt2->get_result();
+                $user_data = $user_result->fetch_assoc();
+
+                if (!empty($user_data['email'])) {
+                    $subject = "Новий коментар до замовлення #$order_id";
+                    $message = "
+                        <html>
+                        <head>
+                            <title>Новий коментар до замовлення #$order_id</title>
+                        </head>
+                        <body>
+                            <h2>Новий коментар до замовлення #$order_id</h2>
+                            <p>Доброго дня!</p>
+                            <p>Адміністратор {$comment['admin_name']} додав новий коментар до вашого замовлення:</p>
+                            <p><strong>Послуга:</strong> {$user_data['service']}</p>
+                            <p><strong>Коментар:</strong><br>" . nl2br(htmlspecialchars($comment['content'])) . "</p>
+                            " . (!empty($comment['file_attachment']) ? "<p><strong>До коментаря додано файл.</strong></p>" : "") . "
+                            <p>Ви можете переглянути деталі в <a href='https://lagodiy.com/admin_panel/dashboard.php'>особистому кабінеті</a>.</p>
+                            <p>З повагою,<br>Команда Lagodiy</p>
+                        </body>
+                        </html>
+                    ";
+
+                    sendNotificationEmail($user_data['email'], $subject, $message);
+                }
+            }
+
+            // Відправляємо push-сповіщення, якщо користувач підписаний
+            if ($notification_prefs['push_notifications'] && $notification_prefs['push_new_comment']) {
+                $title = "Новий коментар до замовлення #$order_id";
+                $body = "Адміністратор {$comment['admin_name']} додав коментар";
+                $url = "https://lagodiy.com/admin_panel/dashboard.php#orders";
+
+                sendPushNotification($conn, $user_id, $title, $body, $url);
             }
         }
     }
 
-    // Отримуємо кількість непрочитаних сповіщень
-    $stmt = $conn->prepare("SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND order_id = ? AND is_read = 0");
-    $stmt->bind_param("ii", $user_id, $order_id);
-    $stmt->execute();
-    $count_result = $stmt->get_result();
-    $unread_count = $count_result->fetch_assoc()['total'] ?? 0;
-
-    return [
-        'new_comments' => $new_comments,
-        'unread_count' => $unread_count,
-        'status_changed' => $last_known_status !== $current_status,
-        'current_status' => $current_status
-    ];
+    return $new_comments_count;
 }
 
-// ЗМІНЕНО: Функція для позначення сповіщень як прочитаних
-function markNotificationsAsRead($conn, $user_id, $order_id) {
-    $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND order_id = ?");
-    $stmt->bind_param("ii", $user_id, $order_id);
-    $stmt->execute();
-    return $stmt->affected_rows;
-}
-
-// Обробка AJAX запиту на позначення сповіщень як прочитаних
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['mark_notifications_read'])) {
-    $order_id = $_POST['order_id'] ?? 0;
-    $affected = markNotificationsAsRead($conn, $user_id, $order_id);
-    echo json_encode(['success' => true, 'affected' => $affected]);
-    exit();
-}
-
-// Перевіряємо сповіщення для кожного замовлення користувача
+// Перевіряємо зміни для всіх замовлень користувача
 foreach ($orders as &$order) {
-    $notifications = processNotifications($conn, $user_id, $order['id']);
-    $order['notifications'] = $notifications;
-    $order['unread_count'] = $notifications['unread_count'];
+    // Перевіряємо зміну статусу
+    $status_changed = checkOrderStatusChanges($conn, $user_id, $order['id'], $notification_prefs);
+
+    // Перевіряємо нові коментарі
+    $new_comments_count = checkNewAdminComments($conn, $user_id, $order['id'], $notification_prefs);
+
+    // Оновлюємо дані замовлення
+    $order['status_changed'] = $status_changed;
+    $order['new_comments_count'] = $new_comments_count;
+
+    // Отримуємо кількість непрочитаних сповіщень для цього замовлення
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND order_id = ? AND is_read = 0");
+    $stmt->bind_param("ii", $user_id, $order['id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $count_data = $result->fetch_assoc();
+    $order['unread_notifications'] = $count_data['count'] ?? 0;
 }
 ?>
 
-<!DOCTYPE html>
-<html lang="uk" data-theme="light">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Особистий кабінет - <?= htmlspecialchars($username) ?></title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <style>
-        :root {
-            --primary-color: #3498db;
-            --secondary-color: #2980b9;
-            --text-color: #333;
-            --bg-color: #f8f9fa;
-            --card-bg: #fff;
-            --border-color: #ddd;
-            --success-color: #28a745;
-            --error-color: #dc3545;
-            --sidebar-width: 280px;
-            --sidebar-collapsed-width: 70px;
-            --header-height: 60px;
-            --transition-speed: 0.3s;
-            --notification-color: #f44336;
-        }
-
-        [data-theme="dark"] {
-            --primary-color: #2196F3;
-            --secondary-color: #1976D2;
-            --text-color: #e4e6eb;
-            --bg-color: #18191a;
-            --card-bg: #242526;
-            --border-color: #3a3b3c;
-            --success-color: #4caf50;
-            --error-color: #f44336;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: var(--text-color);
-            background-color: var(--bg-color);
-            transition: background-color var(--transition-speed), color var(--transition-speed);
-            min-height: 100vh;
-            display: flex;
-            overflow-x: hidden;
-        }
-
-        .sidebar {
-            width: var(--sidebar-width);
-            background-color: var(--card-bg);
-            border-right: 1px solid var(--border-color);
-            height: 100vh;
-            position: fixed;
-            left: 0;
-            top: 0;
-            transition: width var(--transition-speed);
-            z-index: 100;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-
-        .sidebar.collapsed {
-            width: var(--sidebar-collapsed-width);
-        }
-
-        .sidebar-header {
-            height: var(--header-height);
-            display: flex;
-            align-items: center;
-            padding: 0 20px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .sidebar-header .logo {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: var(--primary-color);
-            white-space: nowrap;
-            overflow: hidden;
-        }
-
-        .toggle-sidebar {
-            margin-left: auto;
-            background: none;
-            border: none;
-            color: var(--text-color);
-            cursor: pointer;
-            font-size: 1.2rem;
-        }
-
-        .user-info {
-            padding: 20px;
-            text-align: center;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .user-avatar {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            margin: 0 auto 10px;
-            overflow: hidden;
-            border: 2px solid var(--primary-color);
-        }
-
-        .user-avatar img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .user-name {
-            font-weight: bold;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .sidebar.collapsed .user-info {
-            padding: 10px;
-        }
-
-        .sidebar.collapsed .user-avatar {
-            width: 40px;
-            height: 40px;
-        }
-
-        .sidebar.collapsed .user-name,
-        .sidebar.collapsed .sidebar-header .logo-text {
-            display: none;
-        }
-
-        .sidebar-menu {
-            padding: 20px 0;
-            list-style-type: none;
-        }
-
-        .sidebar-menu li {
-            padding: 0;
-            margin-bottom: 5px;
-            position: relative;
-        }
-
-        .sidebar-menu a {
-            padding: 12px 20px;
-            color: var(--text-color);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            transition: background-color 0.2s;
-        }
-
-        .sidebar-menu a:hover {
-            background-color: rgba(0,0,0,0.05);
-        }
-
-        .sidebar-menu a.active {
-            background-color: var(--primary-color);
-            color: #fff;
-        }
-
-        .sidebar-menu .icon {
-            margin-right: 15px;
-            font-size: 1.2rem;
-            width: 20px;
-            text-align: center;
-        }
-
-        .sidebar.collapsed .sidebar-menu .menu-text {
-            display: none;
-        }
-
-        /* Новий дизайн індикатора сповіщень */
-        .notification-badge {
-            position: absolute;
-            top: 5px;
-            right: 10px;
-            background-color: var(--notification-color);
-            color: white;
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
-            font-weight: bold;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            animation: pulse 2s infinite;
-        }
-
-        .sidebar.collapsed .notification-badge {
-            right: 5px;
-        }
-
-        @keyframes pulse {
-            0% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
+    <!DOCTYPE html>
+    <html lang="uk" data-theme="light">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Особистий кабінет - <?= htmlspecialchars($username) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --primary-color: #3498db;
+                --secondary-color: #2980b9;
+                --success-color: #2ecc71;
+                --info-color: #3498db;
+                --warning-color: #f39c12;
+                --danger-color: #e74c3c;
+                --text-color: #333;
+                --text-muted: #6c757d;
+                --bg-color: #f8f9fa;
+                --card-bg: #fff;
+                --border-color: #ddd;
+                --sidebar-width: 280px;
+                --sidebar-collapsed-width: 70px;
+                --header-height: 60px;
+                --transition-speed: 0.3s;
+                --notification-color: #e74c3c;
+                --shadow: 0 2px 8px rgba(0,0,0,0.1);
             }
-            70% {
-                transform: scale(1.1);
-                box-shadow: 0 0 0 10px rgba(255, 0, 0, 0);
+
+            [data-theme="dark"] {
+                --primary-color: #2196F3;
+                --secondary-color: #1976D2;
+                --success-color: #4caf50;
+                --info-color: #2196F3;
+                --warning-color: #ff9800;
+                --danger-color: #f44336;
+                --text-color: #e4e6eb;
+                --text-muted: #adb5bd;
+                --bg-color: #18191a;
+                --card-bg: #242526;
+                --border-color: #3a3b3c;
+                --shadow: 0 2px 8px rgba(0,0,0,0.3);
             }
-            100% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0);
+
+            [data-theme="blue"] {
+                --primary-color: #1e88e5;
+                --secondary-color: #1565c0;
+                --success-color: #43a047;
+                --info-color: #039be5;
+                --warning-color: #fdd835;
+                --danger-color: #e53935;
+                --text-color: #212121;
+                --text-muted: #757575;
+                --bg-color: #e3f2fd;
+                --card-bg: #fff;
+                --border-color: #bbdefb;
+                --shadow: 0 2px 8px rgba(25,118,210,0.1);
             }
-        }
 
-        .main-content {
-            margin-left: var(--sidebar-width);
-            flex: 1;
-            padding: 20px;
-            transition: margin-left var(--transition-speed);
-        }
-
-        .sidebar.collapsed + .main-content {
-            margin-left: var(--sidebar-collapsed-width);
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-        }
-
-        .theme-toggle {
-            background: none;
-            border: none;
-            color: var(--text-color);
-            cursor: pointer;
-            font-size: 1.2rem;
-            margin-left: 10px;
-        }
-
-        .header-actions {
-            display: flex;
-            align-items: center;
-        }
-
-        .current-time {
-            margin-right: 20px;
-            font-size: 0.9rem;
-            color: var(--text-color);
-        }
-
-        .btn {
-            padding: 8px 16px;
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            transition: background-color 0.2s;
-            margin: 3px;
-            white-space: nowrap;
-        }
-
-        .btn:hover {
-            background-color: var(--secondary-color);
-        }
-
-        .btn-sm {
-            padding: 5px 10px;
-            font-size: 0.9rem;
-        }
-
-        .btn-text {
-            padding: 5px;
-            background: none;
-            border: none;
-            color: var(--primary-color);
-            cursor: pointer;
-            text-decoration: underline;
-            font-size: 0.9rem;
-        }
-
-        .alert {
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 5px;
-            position: relative;
-        }
-
-        .alert-success {
-            background: rgba(40, 167, 69, 0.1);
-            border-left: 4px solid var(--success-color);
-            color: var(--success-color);
-        }
-
-        .alert-error {
-            background: rgba(220, 53, 69, 0.1);
-            border-left: 4px solid var(--error-color);
-            color: var(--error-color);
-        }
-
-        .alert-block {
-            background: rgba(255, 193, 7, 0.1);
-            border-left: 4px solid #ffc107;
-            color: #856404;
-        }
-
-        .card {
-            background-color: var(--card-bg);
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            padding: 20px;
-            margin-bottom: 20px;
-            transition: background-color var(--transition-speed);
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-        }
-
-        .card-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin: 0;
-        }
-
-        .form-group {
-            margin-bottom: 15px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-        }
-
-        .form-control {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            background-color: var(--card-bg);
-            color: var(--text-color);
-            transition: border-color 0.2s;
-        }
-
-        .form-control:focus {
-            border-color: var(--primary-color);
-            outline: none;
-        }
-
-        select.form-control {
-            cursor: pointer;
-        }
-
-        textarea.form-control {
-            resize: vertical;
-            min-height: 100px;
-        }
-
-        .order-card {
-            background-color: var(--card-bg);
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-            overflow: hidden;
-            transition: box-shadow 0.2s, transform 0.2s;
-            position: relative;
-        }
-
-        .order-card:hover {
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transform: translateY(-2px);
-        }
-
-        /* Новий дизайн для замовлень з непрочитаними сповіщеннями */
-        .order-card.has-notifications {
-            border-left: 4px solid var(--notification-color);
-        }
-
-        .order-header {
-            padding: 15px 20px;
-            background-color: rgba(0,0,0,0.03);
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .order-id {
-            font-weight: bold;
-            font-size: 1.1rem;
-            margin: 0;
-            display: flex;
-            align-items: center;
-        }
-
-        .order-meta {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            font-size: 0.9rem;
-        }
-
-        .status-badge {
-            padding: 3px 8px;
-            border-radius: 15px;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-
-        .status-new {
-            background-color: #e3f2fd;
-            color: #0d47a1;
-        }
-
-        .status-processing {
-            background-color: #fff8e1;
-            color: #ff8f00;
-        }
-
-        .status-completed {
-            background-color: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .status-canceled {
-            background-color: #ffebee;
-            color: #c62828;
-        }
-
-        .order-body {
-            padding: 20px;
-            max-height: 200px;
-            overflow: hidden;
-            position: relative;
-            transition: max-height 0.3s ease;
-        }
-
-        .order-body.expanded {
-            max-height: none;
-        }
-
-        .order-detail {
-            margin-bottom: 15px;
-        }
-
-        .order-detail-label {
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .order-actions {
-            margin-top: 20px;
-            display: flex;
-            gap: 10px;
-        }
-
-        .order-files {
-            margin-top: 20px;
-        }
-
-        .file-item {
-            display: flex;
-            align-items: center;
-            padding: 8px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            margin-bottom: 8px;
-            background-color: rgba(0,0,0,0.01);
-        }
-
-        .file-icon {
-            margin-right: 10px;
-            font-size: 1.2rem;
-            color: var(--primary-color);
-        }
-
-        .file-name {
-            flex: 1;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .comments-section {
-            margin-top: 20px;
-            border-top: 1px solid var(--border-color);
-            padding-top: 20px;
-        }
-
-        .comment {
-            background-color: rgba(0,0,0,0.02);
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 10px;
-        }
-
-        .comment-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 0.9rem;
-        }
-
-        .comment-author {
-            font-weight: 600;
-        }
-
-        .comment-date {
-            color: rgba(var(--text-color-rgb), 0.6);
-        }
-
-        .filters-bar {
-            display: flex;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-
-        .filter-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .search-bar {
-            flex: 1;
-            max-width: 300px;
-        }
-
-        /* Модальне вікно */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.5);
-            overflow: auto;
-        }
-
-        .modal-content {
-            background-color: var(--card-bg);
-            margin: 50px auto;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            width: 80%;
-            max-width: 700px;
-            max-height: 80vh;
-            overflow-y: auto;
-            color: var(--text-color);
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }
-
-        .modal-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-
-        .close-modal {
-            font-size: 1.5rem;
-            cursor: pointer;
-            color: var(--text-color);
-            background: none;
-            border: none;
-        }
-
-        .tabs {
-            display: flex;
-            border-bottom: 1px solid var(--border-color);
-            margin-bottom: 20px;
-        }
-
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-        }
-
-        .tab.active {
-            border-bottom-color: var(--primary-color);
-            color: var(--primary-color);
-            font-weight: 600;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .view-more-btn {
-            display: block;
-            text-align: center;
-            padding: 5px;
-            background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, var(--card-bg) 75%);
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            cursor: pointer;
-            color: var(--primary-color);
-            font-weight: 500;
-        }
-
-        /* Стилі для drag-and-drop */
-        .drop-zone {
-            border: 2px dashed var(--border-color);
-            border-radius: 5px;
-            padding: 25px;
-            text-align: center;
-            cursor: pointer;
-            margin-bottom: 15px;
-            transition: border-color 0.3s;
-        }
-
-        .drop-zone:hover, .drop-zone.active {
-            border-color: var(--primary-color);
-        }
-
-        .drop-zone-prompt {
-            color: var(--text-color);
-            margin-bottom: 10px;
-        }
-
-        .drop-zone-thumb {
-            display: inline-flex;
-            align-items: center;
-            margin: 5px;
-            padding: 5px 10px;
-            background: rgba(0,0,0,0.05);
-            border-radius: 4px;
-        }
-
-        /* Стилі для згортання форми створення замовлення */
-        .collapsible-section {
-            margin-bottom: 15px;
-        }
-
-        .collapsible-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px;
-            background-color: rgba(0,0,0,0.02);
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        .collapsible-header h3 {
-            margin: 0;
-            font-size: 1rem;
-        }
-
-        .collapsible-content {
-            padding: 10px 0;
-            display: none;
-        }
-
-        .collapsible-section.open .collapsible-content {
-            display: block;
-        }
-
-        .rotate-icon {
-            transition: transform 0.3s;
-        }
-
-        .collapsible-section.open .rotate-icon {
-            transform: rotate(180deg);
-        }
-
-        .temp-message {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 15px 25px;
-            background-color: var(--primary-color);
-            color: white;
-            border-radius: 5px;
-            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
-            z-index: 1000;
-            animation: fadeOut 2s forwards;
-            animation-delay: 2s;
-        }
-
-        @keyframes fadeOut {
-            from {opacity: 1;}
-            to {opacity: 0; visibility: hidden;}
-        }
-
-        /* Стилі для відображення файлів */
-        .media-viewer {
-            max-width: 100%;
-            margin-top: 10px;
-        }
-
-        .media-viewer img,
-        .media-viewer video {
-            max-width: 100%;
-            max-height: 400px;
-            border-radius: 4px;
-            display: block;
-            margin: 0 auto;
-        }
-
-        .file-viewer {
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid var(--border-color);
-            padding: 15px;
-            border-radius: 4px;
-            background-color: rgba(0,0,0,0.02);
-            white-space: pre-wrap;
-            font-family: monospace;
-        }
-
-        /* Новий стиль для індикатора сповіщень */
-        .notification-indicator {
-            position: relative;
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            background-color: var(--notification-color);
-            border-radius: 50%;
-            margin-left: 8px;
-            animation: pulse 1.5s infinite;
-        }
-
-        /* Контейнер для сповіщень на панелі навігації */
-        .notifications-container {
-            position: absolute;
-            top: 60px;
-            right: 20px;
-            background-color: var(--card-bg);
-            border-radius: 8px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            width: 300px;
-            max-height: 400px;
-            overflow-y: auto;
-            z-index: 1000;
-            display: none;
-        }
-
-        .notifications-header {
-            padding: 10px 15px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .notification-item {
-            padding: 10px 15px;
-            border-bottom: 1px solid var(--border-color);
-            transition: background-color 0.2s;
-        }
-
-        .notification-item:hover {
-            background-color: rgba(0,0,0,0.02);
-        }
-
-        .notification-item.unread {
-            background-color: rgba(52, 152, 219, 0.1);
-            position: relative;
-        }
-
-        .notification-item.unread::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 3px;
-            background-color: var(--primary-color);
-        }
-
-        .notification-title {
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .notification-time {
-            font-size: 0.8rem;
-            color: #777;
-        }
-
-        .mark-all-read {
-            color: var(--primary-color);
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 0.8rem;
-        }
-
-        /* Стиль для тем */
-        .theme-selector {
-            margin-top: 10px;
-            display: flex;
-            gap: 10px;
-        }
-
-        .theme-option {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            cursor: pointer;
-            border: 2px solid transparent;
-        }
-
-        .theme-option.active {
-            border-color: var(--primary-color);
-        }
-
-        .theme-option-light {
-            background-color: #f8f9fa;
-        }
-
-        .theme-option-dark {
-            background-color: #18191a;
-        }
-
-        .theme-option-blue {
-            background-color: #e3f2fd;
-        }
-
-        /* Адаптивність */
-        @media (max-width: 768px) {
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: 'Montserrat', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                color: var(--text-color);
+                background-color: var(--bg-color);
+                transition: background-color var(--transition-speed), color var(--transition-speed);
+                min-height: 100vh;
+                display: flex;
+                overflow-x: hidden;
+                line-height: 1.5;
+            }
+
+            /* Sidebar styling */
             .sidebar {
+                width: var(--sidebar-width);
+                background-color: var(--card-bg);
+                border-right: 1px solid var(--border-color);
+                height: 100vh;
+                position: fixed;
+                left: 0;
+                top: 0;
+                transition: width var(--transition-speed);
+                z-index: 100;
+                box-shadow: var(--shadow);
+                overflow-y: auto;
+            }
+
+            .sidebar.collapsed {
                 width: var(--sidebar-collapsed-width);
             }
 
-            .sidebar.expanded {
-                width: var(--sidebar-width);
-                box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            .sidebar-header {
+                height: var(--header-height);
+                display: flex;
+                align-items: center;
+                padding: 0 20px;
+                border-bottom: 1px solid var(--border-color);
             }
 
-            .main-content {
-                margin-left: var(--sidebar-collapsed-width);
-                padding: 15px;
+            .sidebar-header .logo {
+                font-size: 1.5rem;
+                font-weight: bold;
+                color: var(--primary-color);
+                white-space: nowrap;
+                overflow: hidden;
             }
 
-            .sidebar.expanded + .main-content {
-                margin-left: var(--sidebar-collapsed-width);
+            .toggle-sidebar {
+                margin-left: auto;
+                background: none;
+                border: none;
+                color: var(--text-color);
+                cursor: pointer;
+                font-size: 1.2rem;
             }
 
-            .sidebar:not(.expanded) .sidebar-menu .menu-text,
-            .sidebar:not(.expanded) .user-name,
-            .sidebar:not(.expanded) .sidebar-header .logo-text {
+            .user-info {
+                padding: 20px;
+                text-align: center;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .user-avatar {
+                width: 80px;
+                height: 80px;
+                border-radius: 50%;
+                margin: 0 auto 10px;
+                overflow: hidden;
+                border: 2px solid var(--primary-color);
+                background-color: #f8f9fa;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+
+            .user-avatar img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+
+            .user-name {
+                font-weight: 600;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .sidebar.collapsed .user-info {
+                padding: 10px;
+            }
+
+            .sidebar.collapsed .user-avatar {
+                width: 40px;
+                height: 40px;
+            }
+
+            .sidebar.collapsed .user-name,
+            .sidebar.collapsed .sidebar-header .logo-text {
                 display: none;
             }
 
-            .order-meta {
-                margin-top: 10px;
-                flex-basis: 100%;
+            .sidebar-menu {
+                padding: 20px 0;
+                list-style-type: none;
+            }
+
+            .sidebar-menu li {
+                padding: 0;
+                margin-bottom: 5px;
+                position: relative;
+            }
+
+            .sidebar-menu a {
+                padding: 12px 20px;
+                color: var(--text-color);
+                text-decoration: none;
+                display: flex;
+                align-items: center;
+                transition: background-color 0.2s;
+                border-radius: 4px;
+                margin: 0 5px;
+            }
+
+            .sidebar-menu a:hover {
+                background-color: rgba(0,0,0,0.05);
+            }
+
+            .sidebar-menu a.active {
+                background-color: var(--primary-color);
+                color: #fff;
+            }
+
+            .sidebar-menu .icon {
+                margin-right: 15px;
+                font-size: 1.2rem;
+                width: 20px;
+                text-align: center;
+            }
+
+            .sidebar.collapsed .sidebar-menu .menu-text {
+                display: none;
+            }
+
+            /* Notification badge */
+            .notification-badge {
+                position: absolute;
+                top: 5px;
+                right: 10px;
+                background-color: var(--notification-color);
+                color: white;
+                border-radius: 50%;
+                width: 18px;
+                height: 18px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.7rem;
+                font-weight: bold;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                animation: pulse 2s infinite;
+            }
+
+            .sidebar.collapsed .notification-badge {
+                right: 5px;
+            }
+
+            @keyframes pulse {
+                0% {
+                    transform: scale(0.95);
+                    box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+                }
+                70% {
+                    transform: scale(1.1);
+                    box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
+                }
+                100% {
+                    transform: scale(0.95);
+                    box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+                }
+            }
+
+            /* Main content */
+            .main-content {
+                margin-left: var(--sidebar-width);
+                flex: 1;
+                padding: 20px;
+                transition: margin-left var(--transition-speed);
+            }
+
+            .sidebar.collapsed + .main-content {
+                margin-left: var(--sidebar-collapsed-width);
+            }
+
+            /* Header section */
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 30px;
+                padding-bottom: 15px;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .header-title h1 {
+                font-size: 1.8rem;
+                font-weight: 600;
+                margin: 0;
+            }
+
+            .header-actions {
+                display: flex;
+                align-items: center;
+            }
+
+            .current-time {
+                margin-right: 20px;
+                font-size: 0.9rem;
+                color: var(--text-muted);
+            }
+
+            /* Buttons */
+            .btn {
+                padding: 8px 16px;
+                background-color: var(--primary-color);
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                transition: background-color 0.2s, transform 0.1s;
+                margin: 3px;
+                white-space: nowrap;
+                font-weight: 500;
+            }
+
+            .btn:hover {
+                background-color: var(--secondary-color);
+                transform: translateY(-1px);
+            }
+
+            .btn:active {
+                transform: translateY(1px);
+            }
+
+            .btn-sm {
+                padding: 5px 10px;
+                font-size: 0.9rem;
+            }
+
+            .btn-text {
+                padding: 5px;
+                background: none;
+                border: none;
+                color: var(--primary-color);
+                cursor: pointer;
+                text-decoration: underline;
+                font-size: 0.9rem;
+            }
+
+            .btn-success {
+                background-color: var(--success-color);
+            }
+
+            .btn-success:hover {
+                background-color: var(--success-color);
+                filter: brightness(0.9);
+            }
+
+            .btn-warning {
+                background-color: var(--warning-color);
+                color: var(--text-color);
+            }
+
+            .btn-warning:hover {
+                background-color: var(--warning-color);
+                filter: brightness(0.9);
+            }
+
+            .btn-danger {
+                background-color: var(--danger-color);
+            }
+
+            .btn-danger:hover {
+                background-color: var(--danger-color);
+                filter: brightness(0.9);
+            }
+
+            /* Alerts */
+            .alert {
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 5px;
+                position: relative;
+                border-left: 4px solid transparent;
+            }
+
+            .alert-success {
+                background: rgba(46, 204, 113, 0.1);
+                border-left-color: var(--success-color);
+                color: var(--success-color);
+            }
+
+            .alert-error {
+                background: rgba(231, 76, 60, 0.1);
+                border-left-color: var(--danger-color);
+                color: var(--danger-color);
+            }
+
+            .alert-block {
+                background: rgba(243, 156, 18, 0.1);
+                border-left-color: var(--warning-color);
+                color: var(--warning-color);
+            }
+
+            /* Cards */
+            .card {
+                background-color: var(--card-bg);
+                border-radius: 8px;
+                box-shadow: var(--shadow);
+                padding: 20px;
+                margin-bottom: 20px;
+                transition: box-shadow 0.3s, transform 0.3s;
+            }
+
+            .card:hover {
+                box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            }
+
+            .card-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
+                border-bottom: 1px solid var(--border-color);
+                padding-bottom: 10px;
+            }
+
+            .card-title {
+                font-size: 1.25rem;
+                font-weight: 600;
+                margin: 0;
+            }
+
+            /* Forms */
+            .form-group {
+                margin-bottom: 15px;
+            }
+
+            .form-group label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: 500;
+            }
+
+            .form-control {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid var(--border-color);
+                border-radius: 4px;
+                background-color: var(--card-bg);
+                color: var(--text-color);
+                transition: border-color 0.2s, box-shadow 0.2s;
+            }
+
+            .form-control:focus {
+                border-color: var(--primary-color);
+                outline: none;
+                box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+            }
+
+            select.form-control {
+                cursor: pointer;
+                appearance: none;
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236c757d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+                background-repeat: no-repeat;
+                background-position: right 10px center;
+                padding-right: 30px;
+            }
+
+            textarea.form-control {
+                resize: vertical;
+                min-height: 100px;
+            }
+
+            /* Order cards */
+            .order-card {
+                background-color: var(--card-bg);
+                border-radius: 8px;
+                box-shadow: var(--shadow);
+                margin-bottom: 20px;
+                overflow: hidden;
+                transition: box-shadow 0.2s, transform 0.2s;
+                position: relative;
+                border: 1px solid var(--border-color);
+            }
+
+            .order-card:hover {
+                box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+                transform: translateY(-2px);
+            }
+
+            /* Notification indicator for orders */
+            .order-card.has-notifications {
+                border-left: 4px solid var(--notification-color);
             }
 
             .order-header {
-                flex-direction: column;
-                align-items: flex-start;
+                padding: 15px 20px;
+                background-color: rgba(0,0,0,0.02);
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
             }
 
+            .order-id {
+                font-weight: 600;
+                font-size: 1.1rem;
+                margin: 0;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .order-meta {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                font-size: 0.9rem;
+            }
+
+            .status-badge {
+                padding: 3px 10px;
+                border-radius: 15px;
+                font-size: 0.8rem;
+                font-weight: 500;
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+            }
+
+            .status-new {
+                background-color: #e3f2fd;
+                color: #0d47a1;
+            }
+
+            .status-processing {
+                background-color: #fff8e1;
+                color: #ff8f00;
+            }
+
+            .status-completed {
+                background-color: #e8f5e9;
+                color: #2e7d32;
+            }
+
+            .status-canceled {
+                background-color: #ffebee;
+                color: #c62828;
+            }
+
+            .order-body {
+                padding: 20px;
+                max-height: 200px;
+                overflow: hidden;
+                position: relative;
+                transition: max-height 0.3s ease;
+            }
+
+            .order-body.expanded {
+                max-height: none;
+            }
+
+            .order-detail {
+                margin-bottom: 15px;
+            }
+
+            .order-detail-label {
+                font-weight: 600;
+                margin-bottom: 5px;
+                color: var(--text-muted);
+                font-size: 0.9rem;
+                text-transform: uppercase;
+            }
+
+            .order-actions {
+                margin-top: 20px;
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+
+            .order-files {
+                margin-top: 20px;
+            }
+
+            .file-item {
+                display: flex;
+                align-items: center;
+                padding: 8px 12px;
+                border: 1px solid var(--border-color);
+                border-radius: 4px;
+                margin-bottom: 8px;
+                background-color: rgba(0,0,0,0.01);
+                transition: background-color 0.2s;
+            }
+
+            .file-item:hover {
+                background-color: rgba(0,0,0,0.03);
+            }
+
+            .file-icon {
+                margin-right: 10px;
+                font-size: 1.2rem;
+                color: var(--primary-color);
+            }
+
+            .file-name {
+                flex: 1;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            /* Comments section */
+            .comments-section {
+                margin-top: 20px;
+                border-top: 1px solid var(--border-color);
+                padding-top: 20px;
+            }
+
+            .comment {
+                background-color: rgba(0,0,0,0.02);
+                border-radius: 8px;
+                padding: 15px;
+                margin-top: 10px;
+                position: relative;
+            }
+
+            .comment.new-comment {
+                border-left: 3px solid var(--notification-color);
+                animation: highlight-fade 2s forwards;
+            }
+
+            @keyframes highlight-fade {
+                0% {
+                    background-color: rgba(231, 76, 60, 0.1);
+                }
+                100% {
+                    background-color: rgba(0,0,0,0.02);
+                }
+            }
+
+            .comment-header {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 8px;
+                font-size: 0.9rem;
+            }
+
+            .comment-author {
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+
+            .comment-date {
+                color: var(--text-muted);
+            }
+
+            /* Filters and search */
             .filters-bar {
-                flex-direction: column;
+                display: flex;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                margin-bottom: 20px;
                 gap: 10px;
             }
 
             .filter-group {
-                width: 100%;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
             }
 
             .search-bar {
-                max-width: none;
+                flex: 1;
+                max-width: 300px;
+                position: relative;
             }
 
-            .notifications-container {
-                width: 100%;
-                right: 0;
+            .search-bar .form-control {
+                padding-left: 35px;
+            }
+
+            .search-icon {
+                position: absolute;
+                left: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+                color: var(--text-muted);
+            }
+
+            /* Modal styling */
+            .modal {
+                display: none;
+                position: fixed;
+                z-index: 1000;
                 left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                overflow: auto;
+                animation: fadeIn 0.3s ease;
             }
-        }
 
-        /* Стилі для тексту обов'язкових полів */
-        .required-field::after {
-            content: " *";
-            color: var(--error-color);
-        }
+            @keyframes fadeIn {
+                from {opacity: 0;}
+                to {opacity: 1;}
+            }
 
-        /* Нові стилі для іконки сповіщень */
-        .notifications-icon {
-            position: relative;
-            cursor: pointer;
-            font-size: 1.2rem;
-            margin-right: 15px;
-        }
+            .modal-content {
+                background-color: var(--card-bg);
+                margin: 50px auto;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+                width: 90%;
+                max-width: 700px;
+                max-height: 85vh;
+                overflow-y: auto;
+                animation: slideDown 0.3s ease;
+            }
 
-        .notifications-count {
-            position: absolute;
-            top: -7px;
-            right: -7px;
-            background-color: var(--notification-color);
-            color: white;
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
-            font-weight: bold;
-        }
+            @keyframes slideDown {
+                from {transform: translateY(-50px); opacity: 0;}
+                to {transform: translateY(0); opacity: 1;}
+            }
 
-        /* Анімація появи нового сповіщення */
-        @keyframes newNotification {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-            100% { transform: scale(1); }
-        }
-
-        .new-notification {
-            animation: newNotification 0.5s ease-in-out;
-        }
-
-        /* Стилі для статусу прочитання сповіщень */
-        .status-update {
-            display: flex;
-            align-items: center;
-            background-color: rgba(52, 152, 219, 0.1);
-            padding: 8px 12px;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-
-        .status-update-icon {
-            margin-right: 10px;
-            color: var(--primary-color);
-        }
-
-        .status-update-message {
-            font-size: 0.9rem;
-        }
-
-        /* Стилі для плаваючої кнопки сповіщень на мобільних */
-        .mobile-notifications-btn {
-            display: none;
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background-color: var(--primary-color);
-            color: white;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-            z-index: 99;
-        }
-
-        @media (max-width: 768px) {
-            .mobile-notifications-btn {
+            .modal-header {
                 display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid var(--border-color);
+                padding-bottom: 15px;
+                margin-bottom: 20px;
             }
-        }
-    </style>
-</head>
-<body>
-<!-- Сайдбар -->
-<div class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <div class="logo">
-            <span class="logo-text">Сервісний центр</span>
-        </div>
-        <button class="toggle-sidebar" id="toggle-sidebar">
-            <i class="fas fa-bars"></i>
-        </button>
-    </div>
 
-    <div class="user-info">
-        <div class="user-avatar">
-            <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
-                <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю">
-            <?php else: ?>
-                <img src="../assets/images/default_avatar.png" alt="Фото профілю за замовчуванням">
-            <?php endif; ?>
-        </div>
-        <div class="user-name"><?= htmlspecialchars($username) ?></div>
-    </div>
+            .modal-title {
+                font-size: 1.25rem;
+                font-weight: 600;
+                margin: 0;
+            }
 
-    <ul class="sidebar-menu">
-        <li>
-            <a href="#dashboard" class="active" data-tab="dashboard">
-                <i class="fas fa-home icon"></i>
-                <span class="menu-text">Головна</span>
-            </a>
-        </li>
-        <li>
-            <a href="#orders" data-tab="orders">
-                <i class="fas fa-list-alt icon"></i>
-                <span class="menu-text">Мої замовлення</span>
-                <?php
-                // Підрахунок усіх непрочитаних сповіщень
-                $total_notifications = 0;
-                foreach ($orders as $order) {
-                    $total_notifications += $order['unread_count'];
+            .close-modal {
+                font-size: 1.5rem;
+                cursor: pointer;
+                color: var(--text-color);
+                background: none;
+                border: none;
+                line-height: 1;
+                padding: 0;
+                transition: transform 0.2s;
+            }
+
+            .close-modal:hover {
+                transform: scale(1.1);
+            }
+
+            /* Tabs */
+            .tabs {
+                display: flex;
+                border-bottom: 1px solid var(--border-color);
+                margin-bottom: 20px;
+                overflow-x: auto;
+                scrollbar-width: none;
+            }
+
+            .tabs::-webkit-scrollbar {
+                display: none;
+            }
+
+            .tab {
+                padding: 10px 20px;
+                cursor: pointer;
+                border-bottom: 2px solid transparent;
+                white-space: nowrap;
+                transition: all 0.2s;
+                font-weight: 500;
+            }
+
+            .tab:hover {
+                background-color: rgba(0,0,0,0.02);
+            }
+
+            .tab.active {
+                border-bottom-color: var(--primary-color);
+                color: var(--primary-color);
+                font-weight: 600;
+            }
+
+            .tab-content {
+                display: none;
+            }
+
+            .tab-content.active {
+                display: block;
+                animation: fadeIn 0.3s ease;
+            }
+
+            /* View more button */
+            .view-more-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 8px;
+                background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, var(--card-bg) 50%);
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                cursor: pointer;
+                color: var(--primary-color);
+                font-weight: 500;
+                transition: all 0.2s;
+                gap: 5px;
+            }
+
+            .view-more-btn:hover {
+                color: var(--secondary-color);
+            }
+
+            /* Drag and drop files */
+            .drop-zone {
+                border: 2px dashed var(--border-color);
+                border-radius: 5px;
+                padding: 25px;
+                text-align: center;
+                cursor: pointer;
+                margin-bottom: 15px;
+                transition: border-color 0.3s, background-color 0.3s;
+            }
+
+            .drop-zone:hover, .drop-zone.active {
+                border-color: var(--primary-color);
+                background-color: rgba(52, 152, 219, 0.05);
+            }
+
+            .drop-zone-prompt {
+                color: var(--text-muted);
+                margin-bottom: 10px;
+                font-size: 0.9rem;
+            }
+
+            .drop-zone-thumb {
+                display: inline-flex;
+                align-items: center;
+                margin: 5px;
+                padding: 5px 10px;
+                background: rgba(0,0,0,0.05);
+                border-radius: 4px;
+                font-size: 0.9rem;
+            }
+
+            /* Collapsible sections */
+            .collapsible-section {
+                margin-bottom: 15px;
+            }
+
+            .collapsible-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 15px;
+                background-color: rgba(0,0,0,0.02);
+                border-radius: 5px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+
+            .collapsible-header:hover {
+                background-color: rgba(0,0,0,0.05);
+            }
+
+            .collapsible-header h3 {
+                margin: 0;
+                font-size: 1rem;
+                font-weight: 600;
+            }
+
+            .collapsible-content {
+                padding: 15px 0;
+                display: none;
+            }
+
+            .collapsible-section.open .collapsible-content {
+                display: block;
+                animation: fadeIn 0.3s ease;
+            }
+
+            .rotate-icon {
+                transition: transform 0.3s;
+            }
+
+            .collapsible-section.open .rotate-icon {
+                transform: rotate(180deg);
+            }
+
+            /* Temporary message */
+            .temp-message {
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 12px 20px;
+                background-color: var(--primary-color);
+                color: white;
+                border-radius: 5px;
+                box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+                z-index: 1000;
+                animation: fadeInUp 0.3s forwards, fadeOut 0.3s forwards 2s;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            @keyframes fadeInUp {
+                from {transform: translate(-50%, 20px); opacity: 0;}
+                to {transform: translate(-50%, 0); opacity: 1;}
+            }
+
+            @keyframes fadeOut {
+                from {opacity: 1; visibility: visible;}
+                to {opacity: 0; visibility: hidden;}
+            }
+
+            /* Media viewer */
+            .media-viewer {
+                max-width: 100%;
+                margin-top: 10px;
+            }
+
+            .media-viewer img,
+            .media-viewer video {
+                max-width: 100%;
+                max-height: 400px;
+                border-radius: 4px;
+                display: block;
+                margin: 0 auto;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+
+            .file-viewer {
+                max-height: 400px;
+                overflow-y: auto;
+                border: 1px solid var(--border-color);
+                padding: 15px;
+                border-radius: 4px;
+                background-color: rgba(0,0,0,0.02);
+                white-space: pre-wrap;
+                font-family: monospace;
+            }
+
+            /* Notification system styling */
+            .notification-indicator {
+                position: relative;
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                background-color: var(--notification-color);
+                border-radius: 50%;
+                margin-left: 8px;
+                animation: pulse 1.5s infinite;
+            }
+
+            /* Notification container */
+            .notifications-container {
+                position: absolute;
+                top: 60px;
+                right: 20px;
+                background-color: var(--card-bg);
+                border-radius: 8px;
+                box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+                width: 350px;
+                max-height: 500px;
+                overflow: hidden;
+                z-index: 1000;
+                display: none;
+                flex-direction: column;
+                animation: slideInDown 0.3s ease;
+                border: 1px solid var(--border-color);
+            }
+
+            @keyframes slideInDown {
+                from {transform: translateY(-20px); opacity: 0;}
+                to {transform: translateY(0); opacity: 1;}
+            }
+
+            .notifications-header {
+                padding: 15px;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                position: sticky;
+                top: 0;
+                background-color: var(--card-bg);
+                z-index: 2;
+            }
+
+            .notifications-header h3 {
+                margin: 0;
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+
+            .notifications-content {
+                overflow-y: auto;
+                max-height: 400px;
+                scrollbar-width: thin;
+            }
+
+            .notifications-content::-webkit-scrollbar {
+                width: 6px;
+            }
+
+            .notifications-content::-webkit-scrollbar-thumb {
+                background-color: var(--border-color);
+                border-radius: 3px;
+            }
+
+            .notifications-content::-webkit-scrollbar-track {
+                background-color: transparent;
+            }
+
+            .notification-item {
+                padding: 12px 15px;
+                border-bottom: 1px solid var(--border-color);
+                transition: background-color 0.2s;
+                cursor: pointer;
+                position: relative;
+            }
+
+            .notification-item:hover {
+                background-color: rgba(0,0,0,0.03);
+            }
+
+            .notification-item.unread {
+                background-color: rgba(52, 152, 219, 0.08);
+            }
+
+            .notification-item.unread::before {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 3px;
+                background-color: var(--primary-color);
+            }
+
+            .notification-icon {
+                float: left;
+                margin-right: 12px;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                background-color: rgba(52, 152, 219, 0.1);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--primary-color);
+            }
+
+            .notification-icon.status {
+                background-color: rgba(46, 204, 113, 0.1);
+                color: var(--success-color);
+            }
+
+            .notification-icon.comment {
+                background-color: rgba(52, 152, 219, 0.1);
+                color: var(--info-color);
+            }
+
+            .notification-icon.system {
+                background-color: rgba(243, 156, 18, 0.1);
+                color: var(--warning-color);
+            }
+
+            .notification-icon.alert {
+                background-color: rgba(231, 76, 60, 0.1);
+                color: var(--danger-color);
+            }
+
+            .notification-content {
+                display: flex;
+                flex-direction: column;
+                margin-left: 52px;
+            }
+
+            .notification-title {
+                font-weight: 600;
+                margin-bottom: 3px;
+                font-size: 0.95rem;
+            }
+
+            .notification-message {
+                font-size: 0.85rem;
+                margin-bottom: 5px;
+                color: var(--text-muted);
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+            }
+
+            .notification-time {
+                font-size: 0.75rem;
+                color: var(--text-muted);
+            }
+
+            .mark-all-read {
+                color: var(--primary-color);
+                background: none;
+                border: none;
+                cursor: pointer;
+                font-size: 0.8rem;
+                padding: 5px 10px;
+                border-radius: 4px;
+                transition: background-color 0.2s;
+            }
+
+            .mark-all-read:hover {
+                background-color: rgba(52, 152, 219, 0.1);
+            }
+
+            .notifications-empty {
+                padding: 30px 20px;
+                text-align: center;
+                color: var(--text-muted);
+            }
+
+            .notifications-footer {
+                padding: 10px 15px;
+                border-top: 1px solid var(--border-color);
+                display: flex;
+                justify-content: center;
+                background-color: var(--card-bg);
+            }
+
+            .notifications-footer a {
+                color: var(--primary-color);
+                text-decoration: none;
+                font-size: 0.9rem;
+            }
+
+            /* Header notifications */
+            .notifications-bell {
+                position: relative;
+                margin-right: 20px;
+                font-size: 1.2rem;
+                color: var(--text-color);
+                cursor: pointer;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                transition: background-color 0.2s;
+            }
+
+            .notifications-bell:hover {
+                background-color: rgba(0,0,0,0.05);
+            }
+
+            .notifications-count {
+                position: absolute;
+                top: 0;
+                right: 0;
+                background-color: var(--notification-color);
+                color: white;
+                border-radius: 10px;
+                min-width: 18px;
+                height: 18px;
+                padding: 0 5px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.7rem;
+                font-weight: bold;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            }
+
+            /* Status update notification */
+            .status-update {
+                display: flex;
+                align-items: flex-start;
+                background-color: rgba(52, 152, 219, 0.08);
+                padding: 10px 15px;
+                border-radius: 4px;
+                margin: 10px 0;
+            }
+
+            .status-update-icon {
+                margin-right: 10px;
+                color: var(--primary-color);
+                flex-shrink: 0;
+                margin-top: 3px;
+            }
+
+            .status-update-message {
+                font-size: 0.9rem;
+                flex: 1;
+            }
+
+            /* Theme selector */
+            .theme-selector {
+                display: flex;
+                gap: 8px;
+            }
+
+            .theme-option {
+                width: 25px;
+                height: 25px;
+                border-radius: 50%;
+                cursor: pointer;
+                border: 2px solid transparent;
+                transition: transform 0.2s, border-color 0.2s;
+            }
+
+            .theme-option:hover {
+                transform: scale(1.1);
+            }
+
+            .theme-option.active {
+                border-color: var(--primary-color);
+            }
+
+            .theme-option-light {
+                background-color: #f8f9fa;
+                box-shadow: 0 0 0 1px #ddd;
+            }
+
+            .theme-option-dark {
+                background-color: #18191a;
+                box-shadow: 0 0 0 1px #333;
+            }
+
+            .theme-option-blue {
+                background-color: #e3f2fd;
+                box-shadow: 0 0 0 1px #bbdefb;
+            }
+
+            /* Mobile-specific styles */
+            .mobile-notifications-btn {
+                display: none;
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                width: 50px;
+                height: 50px;
+                border-radius: 50%;
+                background-color: var(--primary-color);
+                color: white;
+                justify-content: center;
+                align-items: center;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+                z-index: 99;
+                animation: fadeIn 0.3s ease;
+            }
+
+            /* Push notification styling */
+            .push-notification-panel {
+                max-width: 500px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: var(--card-bg);
+                border-radius: 8px;
+                box-shadow: var(--shadow);
+            }
+
+            .push-notification-status {
+                padding: 15px;
+                border-radius: 8px;
+                background-color: rgba(46, 204, 113, 0.1);
+                margin-bottom: 15px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .push-notification-status.not-supported {
+                background-color: rgba(231, 76, 60, 0.1);
+                color: var(--danger-color);
+            }
+
+            .push-notification-status.not-enabled {
+                background-color: rgba(243, 156, 18, 0.1);
+                color: var(--warning-color);
+            }
+
+            /* Animation for new notifications */
+            @keyframes newNotification {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.2); }
+                100% { transform: scale(1); }
+            }
+
+            .new-notification {
+                animation: newNotification 0.5s ease-in-out;
+            }
+
+            /* Required fields */
+            .required-field::after {
+                content: " *";
+                color: var(--danger-color);
+            }
+
+            /* Highlight animation for order cards */
+            @keyframes highlight {
+                0% { background-color: rgba(52, 152, 219, 0.2); }
+                100% { background-color: transparent; }
+            }
+
+            .highlight-animation {
+                animation: highlight 2s ease;
+            }
+
+            /* Responsive styles */
+            @media (max-width: 768px) {
+                .sidebar {
+                    width: var(--sidebar-collapsed-width);
+                    transform: translateX(-100%);
+                    position: fixed;
+                    z-index: 1000;
                 }
-                if ($total_notifications > 0): ?>
-                    <span class="notification-badge"><?= $total_notifications > 9 ? '9+' : $total_notifications ?></span>
-                <?php endif; ?>
-            </a>
-        </li>
-        <li>
-            <a href="#new-order" data-tab="new-order">
-                <i class="fas fa-plus icon"></i>
-                <span class="menu-text">Створити замовлення</span>
-            </a>
-        </li>
-        <li>
-            <a href="#settings" data-tab="settings">
-                <i class="fas fa-cog icon"></i>
-                <span class="menu-text">Налаштування</span>
-            </a>
-        </li>
-        <li>
-            <a href="../logout.php">
-                <i class="fas fa-sign-out-alt icon"></i>
-                <span class="menu-text">Вийти</span>
-            </a>
-        </li>
-    </ul>
-</div>
 
-<!-- Основний контент -->
+                .sidebar.expanded {
+                    transform: translateX(0);
+                    width: 250px;
+                }
+
+                .main-content {
+                    margin-left: 0;
+                    padding: 15px;
+                }
+
+                .header {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 10px;
+                }
+
+                .header-actions {
+                    width: 100%;
+                    justify-content: space-between;
+                }
+
+                .order-header {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 10px;
+                }
+
+                .order-meta {
+                    width: 100%;
+                    justify-content: space-between;
+                }
+
+                .filters-bar {
+                    flex-direction: column;
+                    gap: 10px;
+                }
+
+                .filter-group {
+                    width: 100%;
+                    justify-content: space-between;
+                }
+
+                .search-bar {
+                    max-width: none;
+                    width: 100%;
+                }
+
+                .notifications-container {
+                    width: 100%;
+                    max-width: none;
+                    left: 0;
+                    right: 0;
+                    top: 0;
+                    bottom: 0;
+                    max-height: 100%;
+                    border-radius: 0;
+                }
+
+                .notifications-content {
+                    max-height: calc(100vh - 120px);
+                }
+
+                .mobile-notifications-btn {
+                    display: flex;
+                }
+
+                .modal-content {
+                    width: 95%;
+                    margin: 10px auto;
+                    max-height: 95vh;
+                }
+
+                .tabs {
+                    flex-wrap: nowrap;
+                    overflow-x: auto;
+                }
+
+                .tab {
+                    flex: 0 0 auto;
+                }
+            }
+        </style>
+        <!-- Manifest file for web push notifications -->
+        <link rel="manifest" href="../manifest.json">
+    </head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-text">Сервісний центр</span>
+            </div>
+            <button class="toggle-sidebar" id="toggle-sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+
+        <div class="user-info">
+            <div class="user-avatar">
+                <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
+                    <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю">
+                <?php else: ?>
+                    <i class="fas fa-user-circle fa-3x" style="color: #ccc;"></i>
+                <?php endif; ?>
+            </div>
+            <div class="user-name"><?= htmlspecialchars($username) ?></div>
+        </div>
+
+        <ul class="sidebar-menu">
+            <li>
+                <a href="#dashboard" class="active" data-tab="dashboard">
+                    <i class="fas fa-home icon"></i>
+                    <span class="menu-text">Головна</span>
+                </a>
+            </li>
+            <li>
+                <a href="#orders" data-tab="orders">
+                    <i class="fas fa-list-alt icon"></i>
+                    <span class="menu-text">Мої замовлення</span>
+                    <?php if ($unread_notifications_count > 0): ?>
+                        <span class="notification-badge"><?= $unread_notifications_count > 9 ? '9+' : $unread_notifications_count ?></span>
+                    <?php endif; ?>
+                </a>
+            </li>
+            <li>
+                <a href="#new-order" data-tab="new-order">
+                    <i class="fas fa-plus icon"></i>
+                    <span class="menu-text">Створити замовлення</span>
+                </a>
+            </li>
+            <li>
+                <a href="#notifications" data-tab="notifications">
+                    <i class="fas fa-bell icon"></i>
+                    <span class="menu-text">Сповіщення</span>
+                    <?php if ($unread_notifications_count > 0): ?>
+                        <span class="notification-badge"><?= $unread_notifications_count > 9 ? '9+' : $unread_notifications_count ?></span>
+                    <?php endif; ?>
+                </a>
+            </li>
+            <li>
+                <a href="#settings" data-tab="settings">
+                    <i class="fas fa-cog icon"></i>
+                    <span class="menu-text">Налаштування</span>
+                </a>
+            </li>
+            <li>
+                <a href="../logout.php">
+                    <i class="fas fa-sign-out-alt icon"></i>
+                    <span class="menu-text">Вийти</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main content -->
 <div class="main-content">
     <div class="header">
-        <h1>Особистий кабінет</h1>
+        <div class="header-title">
+            <h1>Особистий кабінет</h1>
+        </div>
         <div class="header-actions">
-            <!-- Іконка сповіщень -->
-            <div class="notifications-icon" id="notifications-toggle">
+            <!-- Notifications bell icon -->
+            <div class="notifications-bell" id="notifications-toggle">
                 <i class="fas fa-bell"></i>
-                <?php if ($total_notifications > 0): ?>
-                    <span class="notifications-count"><?= $total_notifications > 9 ? '9+' : $total_notifications ?></span>
+                <?php if ($unread_notifications_count > 0): ?>
+                    <span class="notifications-count"><?= $unread_notifications_count > 9 ? '9+' : $unread_notifications_count ?></span>
                 <?php endif; ?>
             </div>
 
@@ -2161,37 +3092,42 @@ foreach ($orders as &$order) {
         </div>
     </div>
 
-    <!-- Контейнер для сповіщень -->
+    <!-- Notifications dropdown -->
     <div class="notifications-container" id="notifications-container">
-        <div class="notifications-header">
-            <span>Сповіщення</span>
-            <?php if ($total_notifications > 0): ?>
-                <button class="mark-all-read" id="mark-all-read">Позначити всі як прочитані</button>
-            <?php endif; ?>
+    <div class="notifications-header">
+        <h3>Сповіщення</h3>
+        <?php if ($unread_notifications_count > 0): ?>
+            <button class="mark-all-read" id="mark-all-read">
+                <i class="fas fa-check-double"></i> Позначити всі як прочитані
+            </button>
+        <?php endif; ?>
+    </div>
+    <div class="notifications-content">
+<?php if (!empty($user_notifications)): ?>
+    <?php foreach ($user_notifications as $notification): ?>
+    <div class="notification-item <?= $notification['is_read'] ? '' : 'unread' ?>"
+         data-id="<?= $notification['id'] ?>"
+         data-order-id="<?= $notification['order_id'] ?>"
+         data-link="<?= htmlspecialchars($notification['link']) ?>">
+        <div class="notification-icon <?= htmlspecialchars($notification['type']) ?>">
+            <i class="fas <?= htmlspecialchars($notification['icon']) ?>"></i>
         </div>
-        <div class="notifications-content">
-            <?php if ($total_notifications > 0): ?>
-                <?php foreach ($orders as $order): ?>
-                    <?php if ($order['unread_count'] > 0): ?>
-                        <div class="notification-item unread" data-order-id="<?= $order['id'] ?>">
-                            <div class="notification-title">Замовлення #<?= $order['id'] ?></div>
-                            <div class="notification-message">
-                                <?php if (isset($order['notifications']['status_changed']) && $order['notifications']['status_changed']): ?>
-                                    <div>Статус замовлення змінено на: <?= $order['notifications']['current_status'] ?></div>
-                                <?php endif; ?>
-                                <?php if (!empty($order['notifications']['new_comments'])): ?>
-                                    <div>Нові коментарі від адміністратора (<?= count($order['notifications']['new_comments']) ?>)</div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="notification-time">Натисніть для перегляду</div>
-                        </div>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <div class="notification-item">
-                    <div class="notification-message">Немає нових сповіщень</div>
-                </div>
-            <?php endif; ?>
+        <div class="notification-content">
+        <div class="notification-title"><?= htmlspecialchars($notification['title']) ?></div>
+            <div class="notification-message"><?= htmlspecialchars($notification['message']) ?></div>
+            <div class="notification-time"><?= date('d.m.Y H:i', strtotime($notification['created_at'])) ?></div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+<?php else: ?>
+    <div class="notifications-empty">
+        <div><i class="fas fa-bell-slash fa-2x" style="color: var(--text-muted); margin-bottom: 10px;"></i></div>
+        <div>У вас немає сповіщень</div>
+    </div>
+<?php endif; ?>
+    </div>
+        <div class="notifications-footer">
+            <a href="#notifications" data-tab="notifications">Переглянути всі сповіщення</a>
         </div>
     </div>
 
@@ -2214,17 +3150,17 @@ foreach ($orders as &$order) {
         </div>
     <?php endif; ?>
 
-    <!-- Контент вкладок -->
+    <!-- Dashboard tab -->
     <div class="tab-content active" id="dashboard-content">
         <div class="card">
             <div class="card-header">
                 <h2 class="card-title">Статистика</h2>
             </div>
             <div class="order-stats">
-                <p>Активних замовлень: <?= $active_orders_count ?></p>
-                <p>Всього замовлень: <?= count($orders) ?></p>
-                <?php if ($total_notifications > 0): ?>
-                    <p>Непрочитаних сповіщень: <?= $total_notifications ?></p>
+                <p><i class="fas fa-clipboard-list fa-fw"></i> Активних замовлень: <strong><?= $active_orders_count ?></strong></p>
+                <p><i class="fas fa-history fa-fw"></i> Всього замовлень: <strong><?= count($orders) ?></strong></p>
+                <?php if ($unread_notifications_count > 0): ?>
+                    <p><i class="fas fa-bell fa-fw"></i> Непрочитаних сповіщень: <strong><?= $unread_notifications_count ?></strong></p>
                 <?php endif; ?>
             </div>
         </div>
@@ -2238,7 +3174,7 @@ foreach ($orders as &$order) {
             $recent_orders = array_slice($orders, 0, 3);
             if (!empty($recent_orders)):
                 foreach ($recent_orders as $order):
-                    $has_notifications = $order['unread_count'] > 0;
+                    $has_notifications = $order['unread_notifications'] > 0;
                     ?>
                     <div class="order-card <?= $has_notifications ? 'has-notifications' : '' ?>" data-order-id="<?= $order['id'] ?>">
                         <div class="order-header">
@@ -2250,6 +3186,7 @@ foreach ($orders as &$order) {
                             </h3>
                             <div class="order-meta">
                                     <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
+                                        <i class="fas fa-circle" style="font-size: 8px;"></i>
                                         <?= htmlspecialchars($order['status']) ?>
                                     </span>
                                 <span class="order-date">
@@ -2278,11 +3215,11 @@ foreach ($orders as &$order) {
                                 <div class="status-update">
                                     <i class="fas fa-bell status-update-icon"></i>
                                     <div class="status-update-message">
-                                        <?php if (isset($order['notifications']['status_changed']) && $order['notifications']['status_changed']): ?>
-                                            <div>Статус замовлення змінено на: <strong><?= $order['notifications']['current_status'] ?></strong></div>
+                                        <?php if ($order['status_changed']): ?>
+                                            <div>Статус замовлення змінено на: <strong><?= htmlspecialchars($order['status']) ?></strong></div>
                                         <?php endif; ?>
-                                        <?php if (!empty($order['notifications']['new_comments'])): ?>
-                                            <div>Нові коментарі від адміністратора (<?= count($order['notifications']['new_comments']) ?>)</div>
+                                        <?php if ($order['new_comments_count'] > 0): ?>
+                                            <div>Нові коментарі від адміністратора (<?= $order['new_comments_count'] ?>)</div>
                                         <?php endif; ?>
                                     </div>
                                 </div>
@@ -2331,10 +3268,13 @@ foreach ($orders as &$order) {
                                     <?php foreach ($order['comments'] as $comment): ?>
                                         <div class="comment">
                                             <div class="comment-header">
-                                                <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
+                                                    <span class="comment-author">
+                                                        <i class="fas fa-user-shield"></i>
+                                                        <?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?>
+                                                    </span>
                                                 <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
-                                                 <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
-                                             </span>
+                                                        <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
+                                                    </span>
                                             </div>
                                             <div class="comment-body">
                                                 <?= nl2br(htmlspecialchars($comment['content'])) ?>
@@ -2350,7 +3290,7 @@ foreach ($orders as &$order) {
                                     <div class="comment">
                                         <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
                                         <?php if (!$order['is_closed'] && !$block_message): ?>
-                                            <button class="btn btn-sm delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
+                                            <button class="btn btn-sm btn-danger delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
                                                 <i class="fas fa-trash-alt"></i>
                                             </button>
                                         <?php endif; ?>
@@ -2358,20 +3298,22 @@ foreach ($orders as &$order) {
                                 </div>
                             <?php endif; ?>
 
-                            <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
+                            <div class="view-more-btn">
+                                Переглянути повну інформацію <i class="fas fa-chevron-down"></i>
+                            </div>
 
                             <?php if (!$order['is_closed'] && !$block_message): ?>
                                 <div class="order-actions">
                                     <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
                                         <i class="fas fa-edit"></i> Редагувати
                                     </button>
-                                    <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
+                                    <button class="btn btn-sm btn-primary add-comment" data-id="<?= $order['id'] ?>">
                                         <i class="fas fa-comment"></i> Додати коментар
                                     </button>
                                 </div>
                             <?php elseif ($order['is_closed']): ?>
-                                <div class="order-closed-notice">
-                                    <em>Замовлення завершено, редагування недоступне</em>
+                                <div class="order-closed-notice" style="margin-top: 15px; color: var(--text-muted);">
+                                    <em><i class="fas fa-lock"></i> Замовлення завершено, редагування недоступне</em>
                                 </div>
                             <?php endif; ?>
                         </div>
@@ -2383,6 +3325,7 @@ foreach ($orders as &$order) {
         </div>
     </div>
 
+    <!-- Orders tab -->
     <div class="tab-content" id="orders-content">
         <div class="card">
             <div class="card-header">
@@ -2411,6 +3354,7 @@ foreach ($orders as &$order) {
                         </select>
 
                         <div class="search-bar">
+                            <i class="fas fa-search search-icon"></i>
                             <input type="text" name="search" class="form-control" placeholder="Пошук замовлень..." value="<?= htmlspecialchars($search_query) ?>">
                         </div>
 
@@ -2424,7 +3368,7 @@ foreach ($orders as &$order) {
             <?php if (!empty($orders)): ?>
                 <div class="orders-list">
                     <?php foreach ($orders as $order):
-                        $has_notifications = $order['unread_count'] > 0;
+                        $has_notifications = $order['unread_notifications'] > 0;
                         ?>
                         <div class="order-card <?= $has_notifications ? 'has-notifications' : '' ?>" data-order-id="<?= $order['id'] ?>">
                             <div class="order-header">
@@ -2435,15 +3379,16 @@ foreach ($orders as &$order) {
                                     <?php endif; ?>
                                 </h3>
                                 <div class="order-meta">
-                                 <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
-                                     <?= htmlspecialchars($order['status']) ?>
-                                 </span>
+                                        <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $order['status'])) ?>">
+                                            <i class="fas fa-circle" style="font-size: 8px;"></i>
+                                            <?= htmlspecialchars($order['status']) ?>
+                                        </span>
                                     <span class="order-date">
-                                     <i class="far fa-calendar-alt"></i>
-                                     <span class="local-time" data-utc="<?= $order['created_at'] ?>">
-                                         <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
-                                     </span>
-                                 </span>
+                                            <i class="far fa-calendar-alt"></i>
+                                            <span class="local-time" data-utc="<?= $order['created_at'] ?>">
+                                                <?= date('d.m.Y H:i', strtotime($order['created_at'])) ?>
+                                            </span>
+                                        </span>
                                 </div>
                             </div>
                             <div class="order-body">
@@ -2480,11 +3425,11 @@ foreach ($orders as &$order) {
                                     <div class="status-update">
                                         <i class="fas fa-bell status-update-icon"></i>
                                         <div class="status-update-message">
-                                            <?php if (isset($order['notifications']['status_changed']) && $order['notifications']['status_changed']): ?>
-                                                <div>Статус замовлення змінено на: <strong><?= $order['notifications']['current_status'] ?></strong></div>
+                                            <?php if ($order['status_changed']): ?>
+                                                <div>Статус замовлення змінено на: <strong><?= htmlspecialchars($order['status']) ?></strong></div>
                                             <?php endif; ?>
-                                            <?php if (!empty($order['notifications']['new_comments'])): ?>
-                                                <div>Нові коментарі від адміністратора (<?= count($order['notifications']['new_comments']) ?>)</div>
+                                            <?php if ($order['new_comments_count'] > 0): ?>
+                                                <div>Нові коментарі від адміністратора (<?= $order['new_comments_count'] ?>)</div>
                                             <?php endif; ?>
                                         </div>
                                     </div>
@@ -2533,10 +3478,13 @@ foreach ($orders as &$order) {
                                         <?php foreach ($order['comments'] as $comment): ?>
                                             <div class="comment">
                                                 <div class="comment-header">
-                                                    <span class="comment-author"><?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?></span>
+                                                        <span class="comment-author">
+                                                            <i class="fas fa-user-shield"></i>
+                                                            <?= htmlspecialchars($comment['admin_name'] ?? 'Адмін') ?>
+                                                        </span>
                                                     <span class="comment-date local-time" data-utc="<?= $comment['created_at'] ?>">
-                                                     <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
-                                                 </span>
+                                                            <?= date('d.m.Y H:i', strtotime($comment['created_at'])) ?>
+                                                        </span>
                                                 </div>
                                                 <div class="comment-body">
                                                     <?= nl2br(htmlspecialchars($comment['content'])) ?>
@@ -2552,7 +3500,7 @@ foreach ($orders as &$order) {
                                         <div class="comment">
                                             <?= nl2br(htmlspecialchars($order['user_comment'])) ?>
                                             <?php if (!$order['is_closed'] && !$block_message): ?>
-                                                <button class="btn btn-sm delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
+                                                <button class="btn btn-sm btn-danger delete-comment" data-id="<?= $order['id'] ?>" title="Видалити коментар" style="float:right; margin-top: 5px;">
                                                     <i class="fas fa-trash-alt"></i>
                                                 </button>
                                             <?php endif; ?>
@@ -2560,20 +3508,22 @@ foreach ($orders as &$order) {
                                     </div>
                                 <?php endif; ?>
 
-                                <div class="view-more-btn">Переглянути повну інформацію <i class="fas fa-chevron-down"></i></div>
+                                <div class="view-more-btn">
+                                    Переглянути повну інформацію <i class="fas fa-chevron-down"></i>
+                                </div>
 
                                 <?php if (!$order['is_closed'] && !$block_message): ?>
                                     <div class="order-actions">
                                         <button class="btn btn-sm edit-order" data-id="<?= $order['id'] ?>">
                                             <i class="fas fa-edit"></i> Редагувати
                                         </button>
-                                        <button class="btn btn-sm add-comment" data-id="<?= $order['id'] ?>">
+                                        <button class="btn btn-sm btn-primary add-comment" data-id="<?= $order['id'] ?>">
                                             <i class="fas fa-comment"></i> Додати коментар
                                         </button>
                                     </div>
                                 <?php elseif ($order['is_closed']): ?>
-                                    <div class="order-closed-notice">
-                                        <em>Замовлення завершено, редагування недоступне</em>
+                                    <div class="order-closed-notice" style="margin-top: 15px; color: var(--text-muted);">
+                                        <em><i class="fas fa-lock"></i> Замовлення завершено, редагування недоступне</em>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -2581,917 +3531,629 @@ foreach ($orders as &$order) {
                     <?php endforeach; ?>
                 </div>
             <?php else: ?>
-                <p>Замовлення не знайдені.</p>
+                <div style="text-align: center; padding: 30px 0;">
+                    <i class="fas fa-clipboard-list fa-3x" style="color: var(--text-muted); margin-bottom: 15px;"></i>
+                    <p>Замовлення не знайдені.</p>
+                    <a href="#new-order" class="btn" data-tab="new-order" style="margin-top: 15px;">
+                        <i class="fas fa-plus"></i> Створити замовлення
+                    </a>
+                </div>
             <?php endif; ?>
         </div>
     </div>
 
-    <!-- Решта вмісту залишається без змін... -->
+    <!-- New order tab -->
+    <div class="tab-content" id="new-order-content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Створення нового замовлення</h2>
+            </div>
 
-    <!-- Мобільна кнопка сповіщень -->
+            <?php if ($active_orders_count >= 5): ?>
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i> Ви досягли максимальної кількості активних замовлень (5).
+                    Будь ласка, дочекайтесь обробки існуючих замовлень.
+                </div>
+            <?php else: ?>
+                <form action="dashboard.php" method="post" enctype="multipart/form-data" id="create-order-form">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <input type="hidden" name="create_order" value="1">
+                    <input type="hidden" name="dropped_files" id="dropped_files_data" value="">
+
+                    <div class="form-group">
+                        <label for="service" class="required-field">Послуга</label>
+                        <select name="service" id="service" class="form-control" required>
+                            <option value="">Виберіть послугу</option>
+                            <option value="Ремонт комп'ютера">Ремонт комп'ютера</option>
+                            <option value="Ремонт ноутбука">Ремонт ноутбука</option>
+                            <option value="Ремонт телефону">Ремонт телефону</option>
+                            <option value="Ремонт планшету">Ремонт планшету</option>
+                            <option value="Діагностика">Діагностика</option>
+                            <option value="Апгрейд">Апгрейд</option>
+                            <option value="Інше">Інше</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="device_type" class="required-field">Тип пристрою</label>
+                        <select name="device_type" id="device_type" class="form-control" required>
+                            <option value="">Виберіть тип пристрою</option>
+                            <option value="Комп'ютер">Комп'ютер</option>
+                            <option value="Ноутбук">Ноутбук</option>
+                            <option value="Телефон">Телефон</option>
+                            <option value="Планшет">Планшет</option>
+                            <option value="Інше">Інше</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="details" class="required-field">Деталі проблеми</label>
+                        <textarea name="details" id="details" class="form-control" required
+                                  placeholder="Опишіть проблему детально. Вкажіть модель пристрою, симптоми несправності, тощо."
+                        ></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="drop-zone">Додаткові файли (фото, відео, документи)</label>
+                        <div id="drop-zone" class="drop-zone">
+                                <span class="drop-zone-prompt">
+                                    <i class="fas fa-cloud-upload-alt"></i> Перетягніть файли сюди або натисніть для вибору
+                                </span>
+                            <input type="file" name="order_files[]" id="drop-zone-input" multiple accept=".jpg,.jpeg,.png,.gif,.mp4,.avi,.mov,.pdf,.doc,.docx,.txt" class="drop-zone-input" style="display: none;">
+                            <div id="file-preview-container" style="margin-top: 15px;"></div>
+                        </div>
+                        <small style="color: var(--text-muted);">Підтримувані формати: JPG, PNG, GIF, MP4, AVI, MOV, PDF, DOC, DOCX, TXT. Макс. розмір: 10 МБ.</small>
+                    </div>
+
+                    <div class="collapsible-section">
+                        <div class="collapsible-header">
+                            <h3>Контактна інформація</h3>
+                            <i class="fas fa-chevron-down rotate-icon"></i>
+                        </div>
+                        <div class="collapsible-content">
+                            <div class="form-group">
+                                <label for="phone" class="required-field">Телефон</label>
+                                <input type="tel" name="phone" id="phone" class="form-control" value="<?= htmlspecialchars($user_data['phone'] ?? '') ?>" required
+                                       placeholder="+380xxxxxxxxx">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="address" class="required-field">Адреса</label>
+                                <input type="text" name="address" id="address" class="form-control" value="<?= htmlspecialchars($user_data['address'] ?? '') ?>" required
+                                       placeholder="Місто, вулиця, будинок, квартира">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="delivery_method" class="required-field">Спосіб доставки</label>
+                                <select name="delivery_method" id="delivery_method" class="form-control" required>
+                                    <option value="">Виберіть спосіб доставки</option>
+                                    <option value="Самовивіз" <?= ($user_data['delivery_method'] ?? '') === 'Самовивіз' ? 'selected' : '' ?>>Самовивіз</option>
+                                    <option value="Кур'єр" <?= ($user_data['delivery_method'] ?? '') === 'Кур\'єр' ? 'selected' : '' ?>>Кур'єр</option>
+                                    <option value="Нова Пошта" <?= ($user_data['delivery_method'] ?? '') === 'Нова Пошта' ? 'selected' : '' ?>>Нова Пошта</option>
+                                    <option value="Укрпошта" <?= ($user_data['delivery_method'] ?? '') === 'Укрпошта' ? 'selected' : '' ?>>Укрпошта</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="first_name">Ім'я</label>
+                                <input type="text" name="first_name" id="first_name" class="form-control" value="<?= htmlspecialchars($user_data['first_name'] ?? '') ?>">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="last_name">Прізвище</label>
+                                <input type="text" name="last_name" id="last_name" class="form-control" value="<?= htmlspecialchars($user_data['last_name'] ?? '') ?>">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="middle_name">По батькові</label>
+                                <input type="text" name="middle_name" id="middle_name" class="form-control" value="<?= htmlspecialchars($user_data['middle_name'] ?? '') ?>">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-plus"></i> Створити замовлення
+                        </button>
+                    </div>
+                </form>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Notifications tab -->
+    <div class="tab-content" id="notifications-content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Сповіщення</h2>
+                <?php if ($unread_notifications_count > 0): ?>
+                    <button class="btn btn-sm" id="global-mark-all-read">
+                        <i class="fas fa-check-double"></i> Позначити всі як прочитані
+                    </button>
+                <?php endif; ?>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-notification-type="all">Всі</div>
+                <div class="tab" data-notification-type="unread">Непрочитані
+                    <?php if ($unread_notifications_count > 0): ?>
+                        <span class="badge" style="background-color: var(--notification-color); color: white; border-radius: 50%; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; margin-left: 5px;"><?= $unread_notifications_count ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="tab" data-notification-type="order">Замовлення</div>
+                <div class="tab" data-notification-type="status_change">Статуси</div>
+                <div class="tab" data-notification-type="admin_comment">Коментарі</div>
+                <div class="tab" data-notification-type="system">Системні</div>
+            </div>
+
+            <div id="notifications-list">
+                <?php if (!empty($user_notifications)): ?>
+                    <?php foreach ($user_notifications as $notification): ?>
+                        <div class="notification-item <?= $notification['is_read'] ? '' : 'unread' ?>"
+                             data-id="<?= $notification['id'] ?>"
+                             data-type="<?= htmlspecialchars($notification['type']) ?>"
+                             data-order-id="<?= $notification['order_id'] ?>"
+                             data-link="<?= htmlspecialchars($notification['link']) ?>">
+                            <div class="notification-icon <?= htmlspecialchars($notification['type']) ?>">
+                                <i class="fas <?= htmlspecialchars($notification['icon']) ?>"></i>
+                            </div>
+                            <div class="notification-content">
+                                <div class="notification-title"><?= htmlspecialchars($notification['title']) ?></div>
+                                <div class="notification-message"><?= htmlspecialchars($notification['message']) ?></div>
+                                <div class="notification-time"><?= date('d.m.Y H:i', strtotime($notification['created_at'])) ?></div>
+                            </div>
+                            <?php if (!$notification['is_read']): ?>
+                                <button class="btn btn-sm mark-read" data-id="<?= $notification['id'] ?>" title="Позначити як прочитане">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="notifications-empty">
+                        <div><i class="fas fa-bell-slash fa-3x" style="color: var(--text-muted); margin-bottom: 15px;"></i></div>
+                        <div>У вас немає сповіщень</div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings tab -->
+    <div class="tab-content" id="settings-content">
+        <div class="tabs">
+            <div class="tab active" data-target="profile">Профіль</div>
+            <div class="tab" data-target="security">Безпека</div>
+            <div class="tab" data-target="notifications-settings">Сповіщення</div>
+        </div>
+
+        <!-- Profile settings -->
+        <div class="tab-content active" id="profile-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Профіль користувача</h2>
+                </div>
+
+                <div style="display: flex; justify-content: center; margin-bottom: 20px;">
+                    <form method="post" enctype="multipart/form-data" id="profile-pic-form">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <input type="hidden" name="update_profile_pic" value="1">
+                        <div id="profile-drop-zone" style="width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 2px dashed var(--border-color); cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative;">
+                            <?php if (!empty($user_data['profile_pic']) && file_exists('../' . $user_data['profile_pic'])): ?>
+                                <img src="../<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю" class="profile-preview" style="width: 100%; height: 100%; object-fit: cover;">
+                            <?php else: ?>
+                                <i class="fas fa-user-circle fa-5x" style="color: #ccc;"></i>
+                            <?php endif; ?>
+                            <input type="file" name="profile_pic" id="profile_pic" style="display: none;" accept=".jpg,.jpeg,.png,.gif">
+                            <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: white; font-size: 0.8rem; text-align: center; padding: 3px 0;">
+                                <i class="fas fa-camera"></i> Змінити
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <form action="dashboard.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <input type="hidden" name="update_profile" value="1">
+
+                    <div class="form-group">
+                        <label for="profile_phone" class="required-field">Телефон</label>
+                        <input type="tel" name="phone" id="profile_phone" class="form-control" value="<?= htmlspecialchars($user_data['phone'] ?? '') ?>" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile_address" class="required-field">Адреса</label>
+                        <input type="text" name="address" id="profile_address" class="form-control" value="<?= htmlspecialchars($user_data['address'] ?? '') ?>" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile_delivery_method" class="required-field">Спосіб доставки за замовчуванням</label>
+                        <select name="delivery_method" id="profile_delivery_method" class="form-control" required>
+                            <option value="">Виберіть спосіб доставки</option>
+                            <option value="Самовивіз" <?= ($user_data['delivery_method'] ?? '') === 'Самовивіз' ? 'selected' : '' ?>>Самовивіз</option>
+                            <option value="Кур'єр" <?= ($user_data['delivery_method'] ?? '') === 'Кур\'єр' ? 'selected' : '' ?>>Кур'єр</option>
+                            <option value="Нова Пошта" <?= ($user_data['delivery_method'] ?? '') === 'Нова Пошта' ? 'selected' : '' ?>>Нова Пошта</option>
+                            <option value="Укрпошта" <?= ($user_data['delivery_method'] ?? '') === 'Укрпошта' ? 'selected' : '' ?>>Укрпошта</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile_first_name">Ім'я</label>
+                        <input type="text" name="first_name" id="profile_first_name" class="form-control" value="<?= htmlspecialchars($user_data['first_name'] ?? '') ?>">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile_last_name">Прізвище</label>
+                        <input type="text" name="last_name" id="profile_last_name" class="form-control" value="<?= htmlspecialchars($user_data['last_name'] ?? '') ?>">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile_middle_name">По батькові</label>
+                        <input type="text" name="middle_name" id="profile_middle_name" class="form-control" value="<?= htmlspecialchars($user_data['middle_name'] ?? '') ?>">
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn">
+                            <i class="fas fa-save"></i> Зберегти зміни
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Security settings -->
+        <div class="tab-content" id="security-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Зміна email</h2>
+                </div>
+                <form action="dashboard.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <input type="hidden" name="update_email" value="1">
+
+                    <div class="form-group">
+                        <label for="current_email">Поточний email</label>
+                        <input type="email" id="current_email" class="form-control" value="<?= htmlspecialchars($user_data['email'] ?? '') ?>" disabled>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="new_email" class="required-field">Новий email</label>
+                        <input type="email" name="new_email" id="new_email" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email_password" class="required-field">Пароль для підтвердження</label>
+                        <input type="password" name="password" id="email_password" class="form-control" required>
+                        <small class="text-muted">Введіть ваш поточний пароль для підтвердження зміни</small>
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn">
+                            <i class="fas fa-envelope"></i> Змінити email
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Зміна логіна</h2>
+                </div>
+                <form action="dashboard.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <input type="hidden" name="update_username" value="1">
+
+                    <div class="form-group">
+                        <label for="current_username">Поточний логін</label>
+                        <input type="text" id="current_username" class="form-control" value="<?= htmlspecialchars($username) ?>" disabled>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="new_username" class="required-field">Новий логін</label>
+                        <input type="text" name="new_username" id="new_username" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="username_password" class="required-field">Пароль для підтвердження</label>
+                        <input type="password" name="password" id="username_password" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn">
+                            <i class="fas fa-user-edit"></i> Змінити логін
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Зміна пароля</h2>
+                </div>
+                <form action="dashboard.php" method="post" id="password-form">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <input type="hidden" name="update_password" value="1">
+
+                    <div class="form-group">
+                        <label for="current_password" class="required-field">Поточний пароль</label>
+                        <input type="password" name="current_password" id="current_password" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="new_password" class="required-field">Новий пароль</label>
+                        <input type="password" name="new_password" id="new_password" class="form-control" required minlength="8">
+                        <small>Мінімум 8 символів</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirm_password" class="required-field">Підтвердження пароля</label>
+                        <input type="password" name="confirm_password" id="confirm_password" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn">
+                            <i class="fas fa-lock"></i> Змінити пароль
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Notification settings -->
+        <div class="tab-content" id="notifications-settings-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Налаштування сповіщень</h2>
+                </div>
+                <form action="dashboard.php" method="post" id="notification-preferences-form">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <input type="hidden" name="save_notification_preferences" value="1">
+
+                    <h3 style="margin: 20px 0 15px; font-size: 1.1rem;">Email сповіщення</h3>
+
+                    <div class="form-group" style="display: flex; align-items: center;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="email_notifications" id="email_notifications" <?= ($notification_prefs['email_notifications'] ?? true) ? 'checked' : '' ?>>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <label for="email_notifications" style="margin-left: 15px; margin-bottom: 0;">Отримувати email сповіщення</label>
+                    </div>
+
+                    <div class="notification-sub-options" id="email-sub-options" style="margin-left: 30px; margin-bottom: 20px;">
+                        <div class="form-group" style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <input type="checkbox" name="email_order_status" id="email_order_status" <?= ($notification_prefs['email_order_status'] ?? true) ? 'checked' : '' ?>>
+                            <label for="email_order_status" style="margin-left: 10px; margin-bottom: 0;">Зміна статусу замовлення</label>
+                        </div>
+
+                        <div class="form-group" style="display: flex; align-items: center;">
+                            <input type="checkbox" name="email_new_comment" id="email_new_comment" <?= ($notification_prefs['email_new_comment'] ?? true) ? 'checked' : '' ?>>
+                            <label for="email_new_comment" style="margin-left: 10px; margin-bottom: 0;">Нові коментарі адміністратора</label>
+                        </div>
+                    </div>
+
+                    <h3 style="margin: 20px 0 15px; font-size: 1.1rem;">Push сповіщення</h3>
+
+                    <div class="form-group" style="display: flex; align-items: center;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="push_notifications" id="push_notifications" <?= ($notification_prefs['push_notifications'] ?? false) ? 'checked' : '' ?>>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <label for="push_notifications" style="margin-left: 15px; margin-bottom: 0;">Отримувати push сповіщення</label>
+                    </div>
+
+                    <div class="notification-sub-options" id="push-sub-options" style="margin-left: 30px; margin-bottom: 20px;">
+                        <div class="form-group" style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <input type="checkbox" name="push_order_status" id="push_order_status" <?= ($notification_prefs['push_order_status'] ?? false) ? 'checked' : '' ?>>
+                            <label for="push_order_status" style="margin-left: 10px; margin-bottom: 0;">Зміна статусу замовлення</label>
+                        </div>
+
+                        <div class="form-group" style="display: flex; align-items: center;">
+                            <input type="checkbox" name="push_new_comment" id="push_new_comment" <?= ($notification_prefs['push_new_comment'] ?? false) ? 'checked' : '' ?>>
+                            <label for="push_new_comment" style="margin-left: 10px; margin-bottom: 0;">Нові коментарі адміністратора</label>
+                        </div>
+                    </div>
+
+                    <div id="push-notification-status" class="push-notification-panel">
+                        <div class="push-notification-status not-supported" id="browser-support-status">
+                            <i class="fas fa-exclamation-circle fa-fw"></i>
+                            <div>Перевірка підтримки push-сповіщень...</div>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 15px;">
+                            <button type="button" id="enable-push-notifications" class="btn" style="display:none;">
+                                <i class="fas fa-bell"></i> Підписатися на push-сповіщення
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 20px;">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> Зберегти налаштування
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Add Comment Modal -->
+    <div class="modal" id="add-comment-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Додати коментар до замовлення <span id="comment-order-id"></span></h3>
+                <button type="button" class="close-modal">&times;</button>
+            </div>
+            <form id="add-comment-form" method="post">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                <input type="hidden" name="add_comment" value="1">
+                <input type="hidden" name="order_id" id="comment-order-id-input" value="">
+
+                <div class="form-group">
+                    <label for="comment">Ваш коментар</label>
+                    <textarea name="comment" id="comment" class="form-control" rows="5" required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-paper-plane"></i> Додати коментар
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Order Modal -->
+    <div class="modal" id="edit-order-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Редагування замовлення <span id="edit-order-id"></span></h3>
+                <button type="button" class="close-modal">&times;</button>
+            </div>
+            <form id="edit-order-form" method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                <input type="hidden" name="edit_order" value="1">
+                <input type="hidden" name="order_id" id="modal-order-id" value="">
+                <input type="hidden" name="dropped_files" id="edit-dropped_files_data" value="">
+
+                <div class="form-group">
+                    <label for="edit-service" class="required-field">Послуга</label>
+                    <select name="service" id="edit-service" class="form-control" required>
+                        <option value="">Виберіть послугу</option>
+                        <option value="Ремонт комп'ютера">Ремонт комп'ютера</option>
+                        <option value="Ремонт ноутбука">Ремонт ноутбука</option>
+                        <option value="Ремонт телефону">Ремонт телефону</option>
+                        <option value="Ремонт планшету">Ремонт планшету</option>
+                        <option value="Діагностика">Діагностика</option>
+                        <option value="Апгрейд">Апгрейд</option>
+                        <option value="Інше">Інше</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-device_type" class="required-field">Тип пристрою</label>
+                    <select name="device_type" id="edit-device_type" class="form-control" required>
+                        <option value="">Виберіть тип пристрою</option>
+                        <option value="Комп'ютер">Комп'ютер</option>
+                        <option value="Ноутбук">Ноутбук</option>
+                        <option value="Телефон">Телефон</option>
+                        <option value="Планшет">Планшет</option>
+                        <option value="Інше">Інше</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-details" class="required-field">Деталі проблеми</label>
+                    <textarea name="details" id="edit-details" class="form-control" required rows="5"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-user_comment">Ваш коментар</label>
+                    <textarea name="user_comment" id="edit-user_comment" class="form-control" rows="3"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-drop-zone">Додати ще файли</label>
+                    <div id="edit-drop-zone" class="drop-zone">
+                        <span class="drop-zone-prompt">Перетягніть файли сюди або натисніть для вибору</span>
+                        <input type="file" name="order_files[]" id="edit-drop-zone-input" multiple accept=".jpg,.jpeg,.png,.gif,.mp4,.avi,.mov,.pdf,.doc,.docx,.txt" class="drop-zone-input" style="display: none;">
+                        <div id="edit-file-preview-container" style="margin-top: 15px;"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-phone" class="required-field">Телефон</label>
+                    <input type="tel" name="phone" id="edit-phone" class="form-control" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-address" class="required-field">Адреса</label>
+                    <input type="text" name="address" id="edit-address" class="form-control" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-delivery_method" class="required-field">Спосіб доставки</label>
+                    <select name="delivery_method" id="edit-delivery_method" class="form-control" required>
+                        <option value="">Виберіть спосіб доставки</option>
+                        <option value="Самовивіз">Самовивіз</option>
+                        <option value="Кур'єр">Кур'єр</option>
+                        <option value="Нова Пошта">Нова Пошта</option>
+                        <option value="Укрпошта">Укрпошта</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save"></i> Зберегти зміни
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- File Viewer Modal -->
+    <div class="modal" id="file-view-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="file-name-title">Перегляд файлу</h3>
+                <button type="button" class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="file-content-container" class="media-viewer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile notifications button -->
     <div class="mobile-notifications-btn" id="mobile-notifications-btn">
         <i class="fas fa-bell"></i>
-        <?php if ($total_notifications > 0): ?>
-            <span class="notifications-count"><?= $total_notifications > 9 ? '9+' : $total_notifications ?></span>
+        <?php if ($unread_notifications_count > 0): ?>
+            <span class="notifications-count"><?= $unread_notifications_count > 9 ? '9+' : $unread_notifications_count ?></span>
         <?php endif; ?>
     </div>
 
+    <!-- Hidden CSRF token input for AJAX requests -->
+    <input type="hidden" id="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
     <script>
-        // Оновлення локального часу
-        function updateLocalTimes() {
-            document.getElementById('current-time').textContent = new Date().toLocaleString('uk-UA');
-
-            const utcTimeElements = document.querySelectorAll('.local-time');
-            utcTimeElements.forEach(element => {
-                const utcTime = element.getAttribute('data-utc');
-                if (utcTime) {
-                    const localTime = new Date(utcTime).toLocaleString('uk-UA');
-                    element.textContent = localTime;
-                }
-            });
-        }
-
-        // Функція для форматування розміру файлу
-        function formatFileSize(bytes) {
-            if (bytes < 1024) return bytes + ' байт';
-            else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' КБ';
-            else return (bytes / 1048576).toFixed(1) + ' МБ';
-        }
-
-        // Ініціалізація сповіщень
-        function initNotifications() {
-            const notificationsToggle = document.getElementById('notifications-toggle');
-            const notificationsContainer = document.getElementById('notifications-container');
-            const mobileNotificationsBtn = document.getElementById('mobile-notifications-btn');
-            const markAllRead = document.getElementById('mark-all-read');
-
-            // Відкриття/закриття панелі сповіщень
-            function toggleNotifications() {
-                if (notificationsContainer.style.display === 'block') {
-                    notificationsContainer.style.display = 'none';
-                } else {
-                    notificationsContainer.style.display = 'block';
-                }
-            }
-
-            // Додавання обробників подій
-            if (notificationsToggle) {
-                notificationsToggle.addEventListener('click', toggleNotifications);
-            }
-
-            if (mobileNotificationsBtn) {
-                mobileNotificationsBtn.addEventListener('click', toggleNotifications);
-            }
-
-            // Закриття панелі при кліці поза нею
-            document.addEventListener('click', function(event) {
-                const isClickInside = notificationsContainer.contains(event.target) ||
-                    notificationsToggle.contains(event.target) ||
-                    (mobileNotificationsBtn && mobileNotificationsBtn.contains(event.target));
-
-                if (!isClickInside && notificationsContainer.style.display === 'block') {
-                    notificationsContainer.style.display = 'none';
-                }
-            });
-
-            // Обробка кліків по сповіщеннях
-            const notificationItems = document.querySelectorAll('.notification-item');
-            notificationItems.forEach(item => {
-                item.addEventListener('click', function() {
-                    const orderId = this.getAttribute('data-order-id');
-                    if (orderId) {
-                        // Перехід до замовлення та позначення сповіщень як прочитаних
-                        markOrderNotificationsAsRead(orderId);
-
-                        // Активуємо вкладку "Мої замовлення"
-                        const ordersTab = document.querySelector('.sidebar-menu a[data-tab="orders"]');
-                        if (ordersTab) ordersTab.click();
-
-                        // Скролимо до замовлення
-                        setTimeout(() => {
-                            const orderCard = document.querySelector(`.order-card[data-order-id="${orderId}"]`);
-                            if (orderCard) {
-                                orderCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                orderCard.classList.add('highlight-animation');
-                                setTimeout(() => {
-                                    orderCard.classList.remove('highlight-animation');
-                                }, 2000);
-                            }
-                        }, 300);
-
-                        notificationsContainer.style.display = 'none';
-                    }
-                });
-            });
-
-            // Позначення всіх сповіщень як прочитаних
-            if (markAllRead) {
-                markAllRead.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    markAllNotificationsAsRead();
-                });
-            }
-
-            // Обробка клікання на картці замовлення з сповіщеннями
-            const orderCards = document.querySelectorAll('.order-card.has-notifications');
-            orderCards.forEach(card => {
-                card.addEventListener('click', function(e) {
-                    // Перевіряємо, що клік не був по кнопках дій
-                    if (!e.target.closest('.order-actions') && !e.target.closest('.view-more-btn') &&
-                        !e.target.closest('.delete-comment') && !e.target.closest('.view-file')) {
-                        const orderId = this.getAttribute('data-order-id');
-                        if (orderId) {
-                            markOrderNotificationsAsRead(orderId);
-                        }
-                    }
-                });
-            });
-        }
-
-        // Функція для позначення сповіщень замовлення як прочитаних
-        function markOrderNotificationsAsRead(orderId) {
-            const formData = new FormData();
-            formData.append('mark_notifications_read', '1');
-            formData.append('order_id', orderId);
-            formData.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
-
-            fetch('dashboard.php', {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Оновлюємо візуальні індикатори сповіщень
-                        const orderCard = document.querySelector(`.order-card[data-order-id="${orderId}"]`);
-                        if (orderCard) {
-                            orderCard.classList.remove('has-notifications');
-                            const indicator = orderCard.querySelector('.notification-indicator');
-                            if (indicator) indicator.remove();
-
-                            const statusUpdate = orderCard.querySelector('.status-update');
-                            if (statusUpdate) statusUpdate.style.display = 'none';
-                        }
-
-                        // Оновлюємо лічильники сповіщень
-                        updateNotificationCounters();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error marking notifications as read:', error);
-                });
-        }
-
-        // Функція для позначення всіх сповіщень як прочитаних
-        function markAllNotificationsAsRead() {
-            const orderIds = Array.from(document.querySelectorAll('.order-card.has-notifications'))
-                .map(card => card.getAttribute('data-order-id'));
-
-            if (orderIds.length === 0) return;
-
-            // Створюємо масив промісів для всіх запитів
-            const promises = orderIds.map(orderId => {
-                const formData = new FormData();
-                formData.append('mark_notifications_read', '1');
-                formData.append('order_id', orderId);
-                formData.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
-
-                return fetch('dashboard.php', {
-                    method: 'POST',
-                    body: formData
-                }).then(response => response.json());
-            });
-
-            // Очікуємо завершення всіх запитів
-            Promise.all(promises)
-                .then(() => {
-                    // Оновлюємо всі візуальні індикатори
-                    document.querySelectorAll('.order-card.has-notifications').forEach(card => {
-                        card.classList.remove('has-notifications');
-                        const indicator = card.querySelector('.notification-indicator');
-                        if (indicator) indicator.remove();
-
-                        const statusUpdate = card.querySelector('.status-update');
-                        if (statusUpdate) statusUpdate.style.display = 'none';
-                    });
-
-                    // Оновлюємо лічильники сповіщень
-                    updateNotificationCounters();
-
-                    // Оновлюємо вигляд панелі сповіщень
-                    const notificationsContent = document.querySelector('.notifications-content');
-                    if (notificationsContent) {
-                        notificationsContent.innerHTML = '<div class="notification-item"><div class="notification-message">Немає нових сповіщень</div></div>';
-                    }
-
-                    // Приховуємо кнопку "Позначити всі як прочитані"
-                    const markAllReadBtn = document.getElementById('mark-all-read');
-                    if (markAllReadBtn) markAllReadBtn.style.display = 'none';
-
-                    // Приховуємо панель сповіщень
-                    const notificationsContainer = document.getElementById('notifications-container');
-                    if (notificationsContainer) {
-                        setTimeout(() => {
-                            notificationsContainer.style.display = 'none';
-                        }, 1000);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error marking all notifications as read:', error);
-                });
-        }
-
-        // Функція для оновлення лічильників сповіщень
-        function updateNotificationCounters() {
-            const notificationsCount = document.querySelectorAll('.order-card.has-notifications').length;
-
-            // Оновлюємо лічильник на іконці сповіщень
-            const countBadges = document.querySelectorAll('.notifications-count');
-            countBadges.forEach(badge => {
-                if (notificationsCount > 0) {
-                    badge.textContent = notificationsCount > 9 ? '9+' : notificationsCount;
-                    badge.style.display = 'flex';
-                } else {
-                    badge.style.display = 'none';
-                }
-            });
-
-            // Оновлюємо індикатор у меню
-            const menuBadge = document.querySelector('.sidebar-menu .notification-badge');
-            if (menuBadge) {
-                if (notificationsCount > 0) {
-                    menuBadge.textContent = notificationsCount > 9 ? '9+' : notificationsCount;
-                    menuBadge.style.display = 'flex';
-                } else {
-                    menuBadge.style.display = 'none';
-                }
-            }
-
-            // Оновлюємо статистику на головній
-            const notificationsStats = document.querySelector('.order-stats p:nth-child(3)');
-            if (notificationsStats) {
-                if (notificationsCount > 0) {
-                    notificationsStats.textContent = `Непрочитаних сповіщень: ${notificationsCount}`;
-                    notificationsStats.style.display = 'block';
-                } else {
-                    notificationsStats.style.display = 'none';
-                }
-            }
-        }
-
-        // Обробка перегляду деталей замовлення
-        function initViewMoreButtons() {
-            const viewMoreButtons = document.querySelectorAll('.view-more-btn');
-            viewMoreButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    const orderBody = this.closest('.order-body');
-                    orderBody.classList.toggle('expanded');
-                    this.innerHTML = orderBody.classList.contains('expanded')
-                        ? 'Згорнути <i class="fas fa-chevron-up"></i>'
-                        : 'Переглянути повну інформацію <i class="fas fa-chevron-down"></i>';
-                });
-            });
-        }
-
-        // Функція для ініціалізації Drag & Drop
-        function initDragAndDrop(dropZoneId, inputId, previewContainerId, droppedFilesInputId) {
-            const dropZone = document.getElementById(dropZoneId);
-            const fileInput = document.getElementById(inputId);
-            const previewContainer = document.getElementById(previewContainerId);
-            const droppedFilesInput = document.getElementById(droppedFilesInputId);
-
-            let droppedFilesData = [];
-
-            if (!dropZone || !fileInput) return;
-
-            // Обробка вибору файлів через клік
-            dropZone.addEventListener('click', () => fileInput.click());
-
-            // Обробка вибору файлів
-            fileInput.addEventListener('change', function() {
-                updateFilePreview(this.files);
-            });
-
-            // Обробка Drag & Drop
-            dropZone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropZone.classList.add('active');
-            });
-
-            dropZone.addEventListener('dragleave', () => {
-                dropZone.classList.remove('active');
-            });
-
-            dropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('active');
-
-                if (e.dataTransfer.files.length > 0) {
-                    handleDroppedFiles(e.dataTransfer.files);
-                }
-            });
-
-            // Обробка перетягнутих файлів
-            function handleDroppedFiles(files) {
-                for (const file of files) {
-                    const reader = new FileReader();
-                    reader.readAsDataURL(file);
-                    reader.onload = function() {
-                        const fileData = {
-                            name: file.name,
-                            data: reader.result
-                        };
-                        droppedFilesData.push(fileData);
-                        droppedFilesInput.value = JSON.stringify(droppedFilesData);
-
-                        // Додавання превью файлу
-                        const previewItem = document.createElement('div');
-                        previewItem.className = 'drop-zone-thumb';
-
-                        let iconClass = 'fa-file';
-                        const ext = file.name.split('.').pop().toLowerCase();
-                        if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
-                            iconClass = 'fa-file-image';
-                        } else if (['mp4', 'avi', 'mov'].includes(ext)) {
-                            iconClass = 'fa-file-video';
-                        } else if (ext === 'pdf') {
-                            iconClass = 'fa-file-pdf';
-                        } else if (['doc', 'docx'].includes(ext)) {
-                            iconClass = 'fa-file-word';
-                        } else if (ext === 'txt') {
-                            iconClass = 'fa-file-alt';
-                        }
-
-                        previewItem.innerHTML = `
-                        <i class="fas ${iconClass}" style="margin-right: 5px;"></i>
-                        <span>${file.name}</span> (${formatFileSize(file.size)})
-                        <button type="button" class="btn-text remove-file" data-index="${droppedFilesData.length - 1}">&times;</button>
-                    `;
-                        previewContainer.appendChild(previewItem);
-                    };
-                }
-            }
-
-            // Оновлення превью файлів
-            function updateFilePreview(files) {
-                for (const file of files) {
-                    // Додавання превью файлу
-                    const previewItem = document.createElement('div');
-                    previewItem.className = 'drop-zone-thumb';
-
-                    let iconClass = 'fa-file';
-                    const ext = file.name.split('.').pop().toLowerCase();
-                    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
-                        iconClass = 'fa-file-image';
-                    } else if (['mp4', 'avi', 'mov'].includes(ext)) {
-                        iconClass = 'fa-file-video';
-                    } else if (ext === 'pdf') {
-                        iconClass = 'fa-file-pdf';
-                    } else if (['doc', 'docx'].includes(ext)) {
-                        iconClass = 'fa-file-word';
-                    } else if (ext === 'txt') {
-                        iconClass = 'fa-file-alt';
-                    }
-
-                    previewItem.innerHTML = `
-                    <i class="fas ${iconClass}" style="margin-right: 5px;"></i>
-                    <span>${file.name}</span> (${formatFileSize(file.size)})
-                `;
-                    previewContainer.appendChild(previewItem);
-                }
-            }
-
-            // Обробка видалення файлів
-            previewContainer.addEventListener('click', function(e) {
-                if (e.target.classList.contains('remove-file')) {
-                    const index = parseInt(e.target.getAttribute('data-index'));
-                    droppedFilesData.splice(index, 1);
-                    droppedFilesInput.value = JSON.stringify(droppedFilesData);
-                    e.target.closest('.drop-zone-thumb').remove();
-
-                    // Оновлення індексів для інших кнопок видалення
-                    const removeButtons = previewContainer.querySelectorAll('.remove-file');
-                    removeButtons.forEach((button, i) => {
-                        button.setAttribute('data-index', i);
-                    });
-                }
-            });
-        }
-
-        // Функція для створення тимчасового повідомлення
-        function showTempMessage(message, isSuccess = true) {
-            const messageEl = document.createElement('div');
-            messageEl.className = 'temp-message';
-            messageEl.textContent = message;
-
-            if (!isSuccess) {
-                messageEl.style.backgroundColor = 'var(--error-color)';
-            }
-
-            document.body.appendChild(messageEl);
-
-            setTimeout(() => {
-                messageEl.remove();
-            }, 4000); // Видаляємо через 4 секунди
-        }
-
-        // Ініціалізація згортання розділів
-        function initCollapsibleSections() {
-            const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
-            collapsibleHeaders.forEach(header => {
-                header.addEventListener('click', function() {
-                    const section = this.closest('.collapsible-section');
-                    section.classList.toggle('open');
-                });
-            });
-        }
-
-        // Функція для зміни теми
-        function initThemeSelector() {
-            const themeOptions = document.querySelectorAll('.theme-option');
-            const htmlElement = document.documentElement;
-
-            // Перевірка збереженої теми
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            htmlElement.setAttribute('data-theme', savedTheme);
-
-            // Позначення активної теми
-            themeOptions.forEach(option => {
-                if (option.getAttribute('data-theme') === savedTheme) {
-                    option.classList.add('active');
-                } else {
-                    option.classList.remove('active');
-                }
-            });
-
-            // Обробка вибору теми
-            themeOptions.forEach(option => {
-                option.addEventListener('click', function() {
-                    const theme = this.getAttribute('data-theme');
-                    htmlElement.setAttribute('data-theme', theme);
-                    localStorage.setItem('theme', theme);
-
-                    themeOptions.forEach(op => op.classList.remove('active'));
-                    this.classList.add('active');
-                });
-            });
-        }
-
-        // Функція для ініціалізації видалення коментарів користувача
-        function initDeleteComments() {
-            const deleteButtons = document.querySelectorAll('.delete-comment');
-            deleteButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    if (confirm('Ви впевнені, що хочете видалити коментар?')) {
-                        const orderId = this.getAttribute('data-id');
-                        const csrfToken = document.querySelector('input[name="csrf_token"]').value;
-
-                        const formData = new FormData();
-                        formData.append('delete_comment', '1');
-                        formData.append('order_id', orderId);
-                        formData.append('csrf_token', csrfToken);
-
-                        fetch('dashboard.php', {
-                            method: 'POST',
-                            body: formData
-                        })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.success) {
-                                    // Видаляємо коментар з DOM
-                                    const commentSection = this.closest('.user-comment-section');
-                                    commentSection.innerHTML = '';
-                                    showTempMessage(data.message);
-                                } else {
-                                    showTempMessage(data.message, false);
-                                }
-                            })
-                            .catch(error => {
-                                console.error('Error:', error);
-                                showTempMessage('Помилка при видаленні коментаря', false);
-                            });
-                    }
-                });
-            });
-        }
-
-        // Функція для ініціалізації перегляду файлів
-        function initFileViewer() {
-            const viewButtons = document.querySelectorAll('.view-file');
-            const modal = document.getElementById('file-view-modal');
-            const fileNameTitle = document.getElementById('file-name-title');
-            const fileContentContainer = document.getElementById('file-content-container');
-            const closeButton = modal.querySelector('.close-modal');
-
-            viewButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    const filePath = this.getAttribute('data-path');
-                    const fileName = this.getAttribute('data-filename');
-                    fileNameTitle.textContent = fileName;
-
-                    // Очищення контейнера
-                    fileContentContainer.innerHTML = '';
-
-                    // Визначення типу файлу
-                    const ext = fileName.split('.').pop().toLowerCase();
-
-                    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
-                        // Зображення
-                        const img = document.createElement('img');
-                        img.src = filePath;
-                        img.alt = fileName;
-                        fileContentContainer.appendChild(img);
-                    } else if (['mp4', 'avi', 'mov'].includes(ext)) {
-                        // Відео
-                        const video = document.createElement('video');
-                        video.src = filePath;
-                        video.controls = true;
-                        fileContentContainer.appendChild(video);
-                    } else if (ext === 'pdf') {
-                        // PDF
-                        const embed = document.createElement('embed');
-                        embed.src = filePath;
-                        embed.type = 'application/pdf';
-                        embed.style.width = '100%';
-                        embed.style.height = '500px';
-                        fileContentContainer.appendChild(embed);
-                    } else if (['doc', 'docx', 'txt'].includes(ext)) {
-                        // Текстові файли або MS Word
-                        const iframe = document.createElement('iframe');
-                        iframe.src = filePath;
-                        iframe.style.width = '100%';
-                        iframe.style.height = '500px';
-                        fileContentContainer.appendChild(iframe);
-
-                        // Альтернативне посилання для скачування
-                        const downloadLink = document.createElement('a');
-                        downloadLink.href = filePath;
-                        downloadLink.download = fileName;
-                        downloadLink.textContent = 'Завантажити файл';
-                        downloadLink.className = 'btn';
-                        downloadLink.style.marginTop = '10px';
-                        fileContentContainer.appendChild(downloadLink);
-                    } else {
-                        // Невідомий тип файлу
-                        const downloadLink = document.createElement('a');
-                        downloadLink.href = filePath;
-                        downloadLink.download = fileName;
-                        downloadLink.textContent = 'Завантажити файл';
-                        downloadLink.className = 'btn';
-                        fileContentContainer.appendChild(downloadLink);
-                    }
-
-                    modal.style.display = 'block';
-                });
-            });
-
-            // Закриття модального вікна
-            closeButton.addEventListener('click', function() {
-                modal.style.display = 'none';
-            });
-
-            window.addEventListener('click', function(event) {
-                if (event.target === modal) {
-                    modal.style.display = 'none';
-                }
-            });
-        }
-
-        // Функція для ініціалізації модальних вікон
-        function initModals() {
-            // Загальна функція для всіх модальних вікон
-            function setupModal(modalId, openButtons, dataAttribute) {
-                const modal = document.getElementById(modalId);
-                const closeButton = modal.querySelector('.close-modal');
-
-                // Відкриття модального вікна
-                openButtons.forEach(button => {
-                    button.addEventListener('click', function() {
-                        const id = this.getAttribute(dataAttribute);
-
-                        if (modalId === 'edit-order-modal') {
-                            document.getElementById('edit-order-id').textContent = '#' + id;
-                            document.getElementById('modal-order-id').value = id;
-
-                            // Заповнення форми даними замовлення
-                            const orderCard = this.closest('.order-card');
-                            const service = orderCard.querySelector('.order-detail:nth-child(1) div:nth-child(2)').textContent.trim();
-                            const deviceType = orderCard.querySelector('.order-detail:nth-child(2) div:nth-child(2)').textContent.trim();
-                            const details = orderCard.querySelector('.order-detail:nth-child(3) div:nth-child(2)').textContent.trim();
-                            const phone = orderCard.querySelector('.order-detail:nth-child(4) div:nth-child(2)').textContent.trim();
-
-                            let address = '';
-                            const addressEl = orderCard.querySelector('.order-detail:nth-child(5) div:nth-child(2)');
-                            if (addressEl) {
-                                address = addressEl.textContent.trim();
-                            }
-
-                            let deliveryMethod = '';
-                            const deliveryEl = orderCard.querySelector('.order-detail:nth-child(6) div:nth-child(2)');
-                            if (deliveryEl) {
-                                deliveryMethod = deliveryEl.textContent.trim();
-                            }
-
-                            let userComment = '';
-                            const userCommentSection = orderCard.querySelector('.user-comment-section .comment');
-                            if (userCommentSection) {
-                                userComment = userCommentSection.textContent.trim();
-                            }
-
-                            document.getElementById('edit-service').value = service;
-                            document.getElementById('edit-device_type').value = deviceType;
-                            document.getElementById('edit-details').value = details;
-                            document.getElementById('edit-phone').value = phone;
-                            document.getElementById('edit-address').value = address;
-                            document.getElementById('edit-delivery_method').value = deliveryMethod;
-                            document.getElementById('edit-user_comment').value = userComment;
-                        } else if (modalId === 'add-comment-modal') {
-                            document.getElementById('comment-order-id').textContent = '#' + id;
-                            document.getElementById('comment-order-id-input').value = id;
-                        }
-
-                        modal.style.display = 'block';
-                    });
-                });
-
-                // Закриття модального вікна
-                closeButton.addEventListener('click', function() {
-                    modal.style.display = 'none';
-                });
-
-                window.addEventListener('click', function(event) {
-                    if (event.target === modal) {
-                        modal.style.display = 'none';
-                    }
-                });
-            }
-
-            // Ініціалізація модальних вікон
-            setupModal('edit-order-modal', document.querySelectorAll('.edit-order'), 'data-id');
-            setupModal('add-comment-modal', document.querySelectorAll('.add-comment'), 'data-id');
-            setupModal('file-view-modal', document.querySelectorAll('.view-file'), 'data-path');
-
-            // Ініціалізація Drag & Drop для редагування замовлення
-            initDragAndDrop('edit-drop-zone', 'edit-drop-zone-input', 'edit-file-preview-container', 'edit-dropped_files_data');
-        }
-
-        // AJAX відправка форми додавання коментаря
-        function initAjaxCommentForm() {
-            const form = document.getElementById('add-comment-form');
-
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-
-                const formData = new FormData(form);
-
-                fetch('dashboard.php', {
-                    method: 'POST',
-                    body: formData
-                })
-                    .then(response => {
-                        document.getElementById('add-comment-modal').style.display = 'none';
-                        showTempMessage('Коментар успішно додано!');
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1500);
+        // Service Worker Registration for Push Notifications
+        function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('../sw.js')
+                    .then(function(registration) {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                        initPushNotifications(registration);
                     })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        showTempMessage('Помилка при додаванні коментаря', false);
+                    .catch(function(error) {
+                        console.error('Service Worker registration failed:', error);
+                        updatePushNotificationStatus('error', 'Помилка реєстрації Service Worker: ' + error);
                     });
-            });
+            } else {
+                console.warn('Service Worker not supported in this browser');
+                updatePushNotificationStatus('not-supported', 'Ваш браузер не підтримує Push-сповіщення');
+            }
         }
 
-        // Перемикання вкладок
-        function initTabs() {
-            // Переключення вкладок навігації
-            const menuTabs = document.querySelectorAll('.sidebar-menu a[data-tab]');
-            const contentTabs = document.querySelectorAll('.main-content > .tab-content');
-
-            menuTabs.forEach(tab => {
-                tab.addEventListener('click', function(e) {
-                    e.preventDefault();
-
-                    const targetTabId = this.getAttribute('data-tab');
-
-                    // Активний пункт меню
-                    menuTabs.forEach(t => t.classList.remove('active'));
-                    this.classList.add('active');
-
-                    // Активна вкладка контенту
-                    contentTabs.forEach(content => {
-                        content.classList.remove('active');
-                        if (content.id === targetTabId + '-content') {
-                            content.classList.add('active');
-                        }
-                    });
-
-                    // Оновлення URL з хешем
-                    window.location.hash = targetTabId;
-                });
-            });
-
-            // Переключення підвкладок в налаштуваннях
-            const settingsTabs = document.querySelectorAll('.tab');
-            const settingsContents = document.querySelectorAll('#settings-content .tab-content');
-
-            settingsTabs.forEach(tab => {
-                tab.addEventListener('click', function() {
-                    const targetTabId = this.getAttribute('data-target');
-
-                    // Активна вкладка
-                    settingsTabs.forEach(t => t.classList.remove('active'));
-                    this.classList.add('active');
-
-                    // Активний контент
-                    settingsContents.forEach(content => {
-                        content.classList.remove('active');
-                        if (content.id === targetTabId + '-content') {
-                            content.classList.add('active');
-                        }
-                    });
-                });
-            });
-
-            // Перевірка хешу для активації вкладок
-            if (window.location.hash) {
-                const hash = window.location.hash.substr(1);
-                const targetTab = document.querySelector(`.sidebar-menu a[data-tab="${hash}"]`);
-                if (targetTab) {
-                    targetTab.click();
-                }
+        // Push Notification Initialization
+        function initPushNotifications(swRegistration) {
+            // Check if Push API is supported
+            if (!('PushManager' in window)) {
+                console.warn('Push notifications not supported');
+                updatePushNotificationStatus('not-supported', 'Ваш браузер не підтримує Push-сповіщення');
+                return;
             }
 
-            // Обробка кнопки "Переглянути всі"
-            const viewAllButtons = document.querySelectorAll('.view-all[data-tab]');
-            viewAllButtons.forEach(button => {
-                button.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const targetTabId = this.getAttribute('data-tab');
-                    const targetTab = document.querySelector(`.sidebar-menu a[data-tab="${targetTabId}"]`);
-                    if (targetTab) {
-                        targetTab.click();
-                    }
-                });
-            });
-        }
+            // Check permission status
+            checkNotificationPermission().then(permission => {
+                if (permission === 'granted') {
+                    updatePushNotificationStatus('enabled', 'Push-сповіщення увімкнені');
 
-        // Ініціалізація шзгортання сайдбару
-        function initSidebarToggle() {
-            const toggleButton = document.getElementById('toggle-sidebar');
-            const sidebar = document.getElementById('sidebar');
+                    // Update UI to show subscription is active
+                    document.getElementById('push_notifications').checked = true;
 
-            toggleButton.addEventListener('click', function() {
-                if (window.innerWidth <= 768) {
-                    sidebar.classList.toggle('expanded');
-                } else {
-                    sidebar.classList.toggle('collapsed');
-                }
-            });
-
-            // Автоматичне згортання на мобільних пристроях
-            if (window.innerWidth <= 768) {
-                sidebar.classList.remove('expanded');
-            }
-
-            window.addEventListener('resize', function() {
-                if (window.innerWidth <= 768) {
-                    sidebar.classList.remove('collapsed');
-                    if (!sidebar.classList.contains('expanded')) {
-                        sidebar.classList.remove('expanded');
-                    }
-                } else {
-                    sidebar.classList.remove('expanded');
-                }
-            });
-        }
-
-        // Ініціалізація форми профілю для фото
-        function initProfilePicForm() {
-            const profileDropZone = document.getElementById('profile-drop-zone');
-            const profilePicInput = document.getElementById('profile_pic');
-
-            if (!profileDropZone || !profilePicInput) return;
-
-            // Обробка вибору фото через клік
-            profileDropZone.addEventListener('click', () => profilePicInput.click());
-
-            // Обробка вибору фото
-            profilePicInput.addEventListener('change', function() {
-                if (this.files && this.files[0]) {
-                    const file = this.files[0];
-                    const reader = new FileReader();
-
-                    reader.onload = function(e) {
-                        const img = document.querySelector('.profile-preview');
-                        if (img) {
-                            img.src = e.target.result;
-                        }
-                    };
-
-                    reader.readAsDataURL(file);
-
-                    // Автоматичне відправлення форми
-                    this.closest('form').submit();
-                }
-            });
-
-            // Обробка перетягування фото
-            profileDropZone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                profileDropZone.classList.add('active');
-            });
-
-            profileDropZone.addEventListener('dragleave', () => {
-                profileDropZone.classList.remove('active');
-            });
-
-            profileDropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                profileDropZone.classList.remove('active');
-
-                if (e.dataTransfer.files.length > 0) {
-                    const file = e.dataTransfer.files[0];
-
-                    // Перевірка типу файлу
-                    const validTypes = ['image/jpeg', 'image/png', 'image/gif'];
-                    if (!validTypes.includes(file.type)) {
-                        alert('Будь ласка, виберіть зображення (JPEG, PNG, GIF)');
-                        return;
-                    }
-
-                    // Перевірка розміру файлу (максимум 2MB)
-                    if (file.size > 2 * 1024 * 1024) {
-                        alert('Розмір файлу перевищує 2MB');
-                        return;
-                    }
-
-                    // Показати превью
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const img = document.querySelector('.profile-preview');
-                        if (img) {
-                            img.src = e.target.result;
-                        }
-                    };
-                    reader.readAsDataURL(file);
-
-                    // Встановити файл для форми
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(file);
-                    profilePicInput.files = dataTransfer.files;
-
-                    // Автоматичне відправлення форми
-                    profilePicInput.closest('form').submit();
-                }
-            });
-        }
-
-        // Функція для обробки фільтрації замовлень
-        function initFilters() {
-            const filterForm = document.getElementById('filter-form');
-            const statusSelect = filterForm.querySelector('[name="status"]');
-            const serviceSelect = filterForm.querySelector('[name="service"]');
-            const searchInput = filterForm.querySelector('[name="search"]');
-
-            // Автоматичне відправлення форми при зміні селектів
-            statusSelect.addEventListener('change', () => filterForm.submit());
-            serviceSelect.addEventListener('change', () => filterForm.submit());
-
-            // Відправлення форми при натисненні Enter у полі пошуку
-            searchInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    filterForm.submit();
-                }
-            });
-        }
-
-        // Ініціалізація всіх компонентів при завантаженні сторінки
-        document.addEventListener("DOMContentLoaded", function() {
-            // Оновлення часу
-            updateLocalTimes();
-            setInterval(updateLocalTimes, 60000); // Оновлення кожну хвилину
-
-            // Ініціалізація сповіщень
-            initNotifications();
-
-            // Ініціалізація інтерфейсу
-            initViewMoreButtons();
-            initCollapsibleSections();
-            initTabs();
-            initSidebarToggle();
-            initThemeSelector();
-            initDeleteComments();
-            initFileViewer();
-            initModals();
-            initAjaxCommentForm();
-            initFilters();
-
-            // Ініціалізація форм
-            initProfilePicForm();
-            initDragAndDrop('drop-zone', 'drop-zone-input', 'file-preview-container', 'dropped_files_data');
-        });
-    </script>
-</body>
-</html>
+                    // Get existing subscription
+                    swRegistration.pushManager.getSubscription()
+                        .then(subscription => {
+                            if (!subscription) {
+                                // User has permission but not subscribed yet
+                                document.getElementById('enable-push-notifications
