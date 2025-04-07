@@ -1,240 +1,367 @@
-<div class="tab-content" id="settings-content">
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title">Налаштування профілю</h2>
-        </div>
+<div class="page-header">
+    <h1>Налаштування</h1>
+</div>
 
-        <div class="tabs">
-            <div class="tab active" data-target="profile">Особисті дані</div>
-            <div class="tab" data-target="account">Обліковий запис</div>
-            <div class="tab" data-target="notifications">Налаштування сповіщень</div>
-            <div class="tab" data-target="theme">Тема оформлення</div>
-        </div>
-
-        <div class="tab-content active" id="profile-content">
-            <div class="user-avatar-section" style="text-align: center; margin-bottom: 20px;">
-                <h3>Фотографія профілю</h3>
-                <div class="user-avatar" style="width: 120px; height: 120px; margin: 10px auto;">
-                    <?php if (!empty($user_data['profile_pic']) && file_exists($user_data['profile_pic'])): ?>
-                        <img src="<?= htmlspecialchars($user_data['profile_pic']) ?>" alt="Фото профілю" class="profile-preview">
-                    <?php else: ?>
-                        <img src="assets/images/default_avatar.png" alt="Фото профілю за замовчуванням" class="profile-preview">
-                    <?php endif; ?>
-                </div>
-                <form method="POST" action="../dashboard.php" enctype="multipart/form-data" id="profile-pic-form">
-                    <input type="hidden" name="update_profile_pic" value="1">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                    <div id="profile-drop-zone" class="drop-zone" style="width: 200px; height: auto; padding: 10px; margin: 10px auto;">
-                        <span class="drop-zone-prompt">Натисніть щоб змінити фото</span>
-                        <input type="file" name="profile_pic" id="profile_pic" accept="image/*" style="display: none;">
-                    </div>
-                </form>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Налаштування інтерфейсу</h2>
             </div>
-
-            <form method="POST" action="../dashboard.php">
-                <input type="hidden" name="update_profile" value="1">
-                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-
-                <div class="form-group">
-                    <label for="settings_first_name">Ім'я</label>
-                    <input type="text" name="first_name" id="settings_first_name" class="form-control" value="<?= htmlspecialchars($user_data['first_name'] ?? '') ?>">
-                </div>
-
-                <div class="form-group">
-                    <label for="settings_last_name">Прізвище</label>
-                    <input type="text" name="last_name" id="settings_last_name" class="form-control" value="<?= htmlspecialchars($user_data['last_name'] ?? '') ?>">
-                </div>
-
-                <div class="form-group">
-                    <label for="settings_middle_name">По-батькові</label>
-                    <input type="text" name="middle_name" id="settings_middle_name" class="form-control" value="<?= htmlspecialchars($user_data['middle_name'] ?? '') ?>">
-                </div>
-
-                <div class="form-group">
-                    <label for="settings_phone" class="required-field">Номер телефону</label>
-                    <input type="tel" name="phone" id="settings_phone" class="form-control" value="<?= htmlspecialchars($user_data['phone'] ?? '') ?>" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="settings_address" class="required-field">Адреса</label>
-                    <input type="text" name="address" id="settings_address" class="form-control" value="<?= htmlspecialchars($user_data['address'] ?? '') ?>" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="settings_delivery_method" class="required-field">Спосіб доставки за замовчуванням</label>
-                    <select name="delivery_method" id="settings_delivery_method" class="form-control" required>
-                        <option value="">Виберіть спосіб доставки</option>
-                        <option value="Самовивіз" <?= ($user_data['delivery_method'] ?? '') === 'Самовивіз' ? 'selected' : '' ?>>Самовивіз</option>
-                        <option value="Нова пошта" <?= ($user_data['delivery_method'] ?? '') === 'Нова пошта' ? 'selected' : '' ?>>Нова пошта</option>
-                        <option value="Кур'єр" <?= ($user_data['delivery_method'] ?? '') === 'Кур\'єр' ? 'selected' : '' ?>>Кур'єр</option>
-                        <option value="Укрпошта" <?= ($user_data['delivery_method'] ?? '') === 'Укрпошта' ? 'selected' : '' ?>>Укрпошта</option>
-                    </select>
-                </div>
-
-                <button type="submit" class="btn">
-                    <i class="fas fa-save"></i> Зберегти зміни
-                </button>
-            </form>
-        </div>
-
-        <div class="tab-content" id="account-content">
-            <h3>Зміна Email</h3>
-            <form method="POST" action="dashboard.php">
-                <input type="hidden" name="update_email" value="1">
-                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-
-                <div class="form-group">
-                    <label for="current_email">Поточний Email</label>
-                    <input type="email" id="current_email" class="form-control" value="<?= htmlspecialchars($user_data['email']) ?>" disabled>
-                </div>
-
-                <div class="form-group">
-                    <label for="new_email" class="required-field">Новий Email</label>
-                    <input type="email" name="new_email" id="new_email" class="form-control" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="email_password" class="required-field">Пароль для підтвердження</label>
-                    <input type="password" name="password" id="email_password" class="form-control" required>
-                </div>
-
-                <button type="submit" class="btn">
-                    <i class="fas fa-envelope"></i> Змінити Email
-                </button>
-            </form>
-
-            <hr style="margin: 30px 0;">
-
-            <h3>Зміна логіна</h3>
-            <form method="POST" action="dashboard.php">
-                <input type="hidden" name="update_username" value="1">
-                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-
-                <div class="form-group">
-                    <label for="current_username">Поточний логін</label>
-                    <input type="text" id="current_username" class="form-control" value="<?= htmlspecialchars($username) ?>" disabled>
-                </div>
-
-                <div class="form-group">
-                    <label for="new_username" class="required-field">Новий логін</label>
-                    <input type="text" name="new_username" id="new_username" class="form-control" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="username_password" class="required-field">Пароль для підтвердження</label>
-                    <input type="password" name="password" id="username_password" class="form-control" required>
-                </div>
-
-                <button type="submit" class="btn">
-                    <i class="fas fa-user-edit"></i> Змінити логін
-                </button>
-            </form>
-
-            <hr style="margin: 30px 0;">
-
-            <h3>Зміна пароля</h3>
-            <form method="POST" action="dashboard.php">
-                <input type="hidden" name="update_password" value="1">
-                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-
-                <div class="form-group">
-                    <label for="current_password" class="required-field">Поточний пароль</label>
-                    <input type="password" name="current_password" id="current_password" class="form-control" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="new_password" class="required-field">Новий пароль</label>
-                    <input type="password" name="new_password" id="new_password" class="form-control" required>
-                    <div class="password-requirements" style="font-size: 0.8rem; color: #777; margin-top: 5px;">
-                        Пароль повинен містити мінімум 8 символів
+            <div class="card-body">
+                <div class="setting-group">
+                    <h3 class="setting-title">Тема оформлення</h3>
+                    <div class="setting-value">
+                        <?php
+                        $themeNames = [
+                            'light' => 'Світла',
+                            'dark' => 'Темна',
+                            'blue' => 'Блакитна',
+                            'grey' => 'Сіра'
+                        ];
+                        ?>
+                        <span><?= $themeNames[$theme] ?? 'Світла' ?></span>
+                        <button id="change-theme-btn" class="btn btn-primary btn-sm">Змінити</button>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="confirm_password" class="required-field">Підтвердження пароля</label>
-                    <input type="password" name="confirm_password" id="confirm_password" class="form-control" required>
+                <div class="setting-group">
+                    <h3 class="setting-title">Кількість записів на сторінку</h3>
+                    <div class="setting-value">
+                        <select id="items-per-page" name="items_per_page" class="form-control">
+                            <?php
+                            $perPageOptions = [5, 10, 15, 20, 25, 30, 50];
+                            $currentPerPage = (int)($userSettings['setting_value'] ?? 10);
+
+                            foreach ($perPageOptions as $option):
+                                ?>
+                                <option value="<?= $option ?>" <?= $currentPerPage === $option ? 'selected' : '' ?>><?= $option ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button id="save-per-page-btn" class="btn btn-primary btn-sm">Зберегти</button>
+                    </div>
                 </div>
 
-                <button type="submit" class="btn">
-                    <i class="fas fa-lock"></i> Змінити пароль
-                </button>
-            </form>
-        </div>
+                <div class="setting-group">
+                    <h3 class="setting-title">Сповіщення на email</h3>
+                    <div class="setting-value">
+                        <div class="form-check">
+                            <?php
+                            $emailNotifications = $db->query(
+                                "SELECT setting_value FROM user_settings WHERE user_id = ? AND setting_key = 'email_notifications'",
+                                [$userId]
+                            )->find();
 
-        <div class="tab-content" id="notifications-content">
-            <h3>Налаштування сповіщень</h3>
-            <p>Налаштуйте, як ви хочете отримувати сповіщення про статус ваших замовлень та нові коментарі адміністраторів</p>
-
-            <form method="POST" action="dashboard.php">
-                <input type="hidden" name="update_notification_settings" value="1">
-                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-
-                <div class="notification-settings">
-                    <div class="notification-option">
-                        <label>
-                            <span class="switch">
-                                <input type="checkbox" name="email_notifications" <?= $email_notifications_enabled ? 'checked' : '' ?>>
-                                <span class="slider"></span>
-                            </span>
-                            Email-сповіщення
-                        </label>
-                        <div class="notification-description">
-                            Отримувати email-сповіщення про зміну статусу замовлень та нові коментарі адміністратора.
-                            Будуть надсилатися на адресу: <?= htmlspecialchars($user_data['email']) ?>
-                        </div>
-                    </div>
-
-                    <div class="notification-option">
-                        <label>
-                            <span class="switch">
-                                <input type="checkbox" name="push_notifications" id="push-notifications-toggle" <?= $push_notifications_enabled ? 'checked' : '' ?>>
-                                <span class="slider"></span>
-                            </span>
-                            Push-сповіщення
-                        </label>
-                        <div class="notification-description">
-                            Отримувати миттєві сповіщення у вашому браузері, навіть коли сайт не відкритий.
-                            <span id="push-permission-status" style="display: block; margin-top: 5px; font-weight: 500;"></span>
+                            $emailNotificationsEnabled = $emailNotifications ? (bool)$emailNotifications['setting_value'] : true;
+                            ?>
+                            <input type="checkbox" id="email-notifications" class="form-check-input" <?= $emailNotificationsEnabled ? 'checked' : '' ?>>
+                            <label for="email-notifications" class="form-check-label">
+                                Отримувати сповіщення про замовлення на email
+                            </label>
                         </div>
                     </div>
                 </div>
 
-                <button type="submit" class="btn">
-                    <i class="fas fa-save"></i> Зберегти налаштування
-                </button>
-            </form>
-
-            <div id="push-permission-notice" style="margin-top: 20px; display: none;">
-                <div class="alert alert-info">
-                    <p><i class="fas fa-info-circle"></i> Для отримання push-сповіщень потрібно надати дозвіл на їх відображення у вашому браузері</p>
-                    <button id="request-permission-btn" class="btn" style="margin-top: 10px;">
-                        <i class="fas fa-bell"></i> Надати дозвіл на сповіщення
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="tab-content" id="theme-content">
-            <h3>Налаштування теми оформлення</h3>
-            <p>Виберіть зручну для вас тему оформлення інтерфейсу</p>
-
-            <div class="theme-options">
-                <div class="theme-option-card" data-theme="light">
-                    <div class="theme-preview theme-preview-light"></div>
-                    <div class="theme-name">Світла тема</div>
-                    <div class="theme-description">Стандартна світла тема з білим фоном</div>
-                </div>
-                <div class="theme-option-card" data-theme="dark">
-                    <div class="theme-preview theme-preview-dark"></div>
-                    <div class="theme-name">Темна тема</div>
-                    <div class="theme-description">Темна тема для комфортної роботи вночі</div>
-                </div>
-                <div class="theme-option-card" data-theme="blue">
-                    <div class="theme-preview theme-preview-blue"></div>
-                    <div class="theme-name">Синя тема</div>
-                    <div class="theme-description">Синя тема для зниження навантаження на очі</div>
+                <div class="setting-group">
+                    <h3 class="setting-title">Час автоматичного виходу</h3>
+                    <div class="setting-value">
+                        <span>30 хвилин</span>
+                        <div class="form-hint">
+                            <i class="fas fa-info-circle"></i>
+                            Система автоматично завершує сеанс після 30 хвилин неактивності
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Безпека</h2>
+            </div>
+            <div class="card-body">
+                <div class="setting-group">
+                    <h3 class="setting-title">Пароль</h3>
+                    <div class="setting-value">
+                        <span>••••••••</span>
+                        <button id="change-password-btn" class="btn btn-primary btn-sm">Змінити</button>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <h3 class="setting-title">Email</h3>
+                    <div class="setting-value">
+                        <span><?= htmlspecialchars($userData['email']) ?></span>
+                        <button id="change-email-btn" class="btn btn-primary btn-sm">Змінити</button>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <h3 class="setting-title">Двофакторна автентифікація</h3>
+                    <div class="setting-value">
+                        <span>Вимкнено</span>
+                        <button id="enable-2fa-btn" class="btn btn-primary btn-sm" disabled>Увімкнути</button>
+                        <div class="form-hint">
+                            <i class="fas fa-info-circle"></i>
+                            Функція незабаром буде доступна
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <h3 class="setting-title">Активні сеанси</h3>
+                    <div class="setting-value">
+                        <?php
+                        // Отримання активних сеансів
+                        $sessions = $db->query(
+                            "SELECT * FROM user_sessions WHERE user_id = ? ORDER BY last_activity DESC",
+                            [$userId]
+                        )->findAll();
+
+                        $sessionCount = count($sessions);
+                        ?>
+                        <span><?= $sessionCount ?> <?= numWord($sessionCount, ['активний сеанс', 'активні сеанси', 'активних сеансів']) ?></span>
+                        <button id="show-sessions-btn" class="btn btn-secondary btn-sm">Переглянути</button>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <h3 class="setting-title">Журнал активності</h3>
+                    <div class="setting-value">
+                        <?php
+                        // Отримання кількості записів з журналу
+                        $activityCount = $db->query(
+                            "SELECT COUNT(*) FROM user_activity_logs WHERE user_id = ?",
+                            [$userId]
+                        )->findColumn();
+                        ?>
+                        <span><?= $activityCount ?> <?= numWord($activityCount, ['запис', 'записи', 'записів']) ?></span>
+                        <button id="show-activity-btn" class="btn btn-secondary btn-sm">Переглянути</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card mt-4">
+            <div class="card-header">
+                <h2 class="card-title">Обмеження замовлень</h2>
+            </div>
+            <div class="card-body">
+                <?php
+                // Отримання інформації про обмеження замовлень
+                $orderLimits = $db->query(
+                    "SELECT * FROM order_limits WHERE user_id = ? ORDER BY limit_type",
+                    [$userId]
+                )->findAll();
+
+                $limitTypes = [
+                    'daily' => 'Денний ліміт',
+                    'weekly' => 'Тижневий ліміт',
+                    'monthly' => 'Місячний ліміт',
+                    'total' => 'Загальний ліміт'
+                ];
+
+                if (!empty($orderLimits)):
+                    ?>
+                    <div class="limits-table">
+                        <table class="table">
+                            <thead>
+                            <tr>
+                                <th>Тип ліміту</th>
+                                <th>Використано</th>
+                                <th>Максимум</th>
+                                <th>Скидання</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($orderLimits as $limit): ?>
+                                <tr>
+                                    <td><?= $limitTypes[$limit['limit_type']] ?? $limit['limit_type'] ?></td>
+                                    <td><?= $limit['current_count'] ?></td>
+                                    <td><?= $limit['max_orders'] ?></td>
+                                    <td>
+                                        <?php
+                                        if ($limit['limit_type'] === 'total') {
+                                            echo 'Ніколи';
+                                        } elseif ($limit['reset_date']) {
+                                            $resetDate = strtotime($limit['reset_date']);
+
+                                            switch ($limit['limit_type']) {
+                                                case 'daily':
+                                                    $nextReset = $resetDate + 86400;
+                                                    break;
+                                                case 'weekly':
+                                                    $nextReset = $resetDate + 604800;
+                                                    break;
+                                                case 'monthly':
+                                                    $nextReset = $resetDate + 2592000;
+                                                    break;
+                                            }
+
+                                            echo date('d.m.Y H:i', $nextReset);
+                                        } else {
+                                            echo 'При наступному замовленні';
+                                        }
+                                        ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="form-hint">
+                        <i class="fas fa-info-circle"></i>
+                        Ліміти замовлень встановлюються адміністрацією та можуть бути змінені в залежності від вашої активності
+                    </div>
+                <?php else: ?>
+                    <div class="empty-state-mini">
+                        <p>Інформація про обмеження недоступна</p>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Зміна теми оформлення
+        const changeThemeBtn = document.getElementById('change-theme-btn');
+        if (changeThemeBtn) {
+            changeThemeBtn.addEventListener('click', function() {
+                openModal('change-theme-modal');
+            });
+        }
+
+        // Ініціалізація обробників теми
+        initThemeHandlers();
+
+        // Зміна кількості записів на сторінку
+        const savePerPageBtn = document.getElementById('save-per-page-btn');
+        const itemsPerPageSelect = document.getElementById('items-per-page');
+
+        if (savePerPageBtn && itemsPerPageSelect) {
+            savePerPageBtn.addEventListener('click', function() {
+                const perPage = itemsPerPageSelect.value;
+
+                // Зберігаємо налаштування
+                fetch('dashboard.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: new URLSearchParams({
+                        'save_setting': '1',
+                        'setting_key': 'items_per_page',
+                        'setting_value': perPage,
+                        'csrf_token': config.csrfToken
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showNotification('success', 'Налаштування успішно збережені');
+                        } else {
+                            showNotification('error', data.message || 'Помилка при збереженні налаштувань');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showNotification('error', 'Помилка при збереженні налаштувань');
+                    });
+            });
+        }
+
+        // Увімкнення/вимкнення сповіщень на email
+        const emailNotificationsCheckbox = document.getElementById('email-notifications');
+
+        if (emailNotificationsCheckbox) {
+            emailNotificationsCheckbox.addEventListener('change', function() {
+                const enabled = this.checked ? 1 : 0;
+
+                // Зберігаємо налаштування
+                fetch('dashboard.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: new URLSearchParams({
+                        'save_setting': '1',
+                        'setting_key': 'email_notifications',
+                        'setting_value': enabled,
+                        'csrf_token': config.csrfToken
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showNotification('success', 'Налаштування успішно збережені');
+                        } else {
+                            // Відновлюємо попередній стан, якщо помилка
+                            this.checked = !this.checked;
+                            showNotification('error', data.message || 'Помилка при збереженні налаштувань');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        // Відновлюємо попередній стан, якщо помилка
+                        this.checked = !this.checked;
+                        showNotification('error', 'Помилка при збереженні налаштувань');
+                    });
+            });
+        }
+
+        // Обробка кнопок зміни пароля та email
+        const changePasswordBtn = document.getElementById('change-password-btn');
+        if (changePasswordBtn) {
+            changePasswordBtn.addEventListener('click', function() {
+                openModal('change-password-modal');
+            });
+        }
+
+        const changeEmailBtn = document.getElementById('change-email-btn');
+        if (changeEmailBtn) {
+            changeEmailBtn.addEventListener('click', function() {
+                openModal('change-email-modal');
+            });
+        }
+
+        // Перегляд активних сеансів
+        const showSessionsBtn = document.getElementById('show-sessions-btn');
+        if (showSessionsBtn) {
+            showSessionsBtn.addEventListener('click', function() {
+                // Тут можемо реалізувати відкриття модального вікна з активними сеансами
+                // або перенаправлення на окрему сторінку з активними сеансами
+                showNotification('info', 'Функціональність перегляду активних сеансів буде доступна незабаром');
+            });
+        }
+
+        // Перегляд журналу активності
+        const showActivityBtn = document.getElementById('show-activity-btn');
+        if (showActivityBtn) {
+            showActivityBtn.addEventListener('click', function() {
+                // Тут можемо реалізувати відкриття модального вікна з журналом активності
+                // або перенаправлення на окрему сторінку з журналом активності
+                showNotification('info', 'Функціональність перегляду журналу активності буде доступна незабаром');
+            });
+        }
+
+        // Ініціалізація обробників для теми
+        function initThemeHandlers() {
+            // Обробка кліків на елементах вибору теми
+            document.querySelectorAll('.theme-item').forEach(function(item) {
+                item.addEventListener('click', function() {
+                    const theme = this.getAttribute('data-theme');
+                    changeTheme(theme);
+
+                    // Позначаємо активну тему
+                    document.querySelectorAll('.theme-item').forEach(el => el.classList.remove('active'));
+                    this.classList.add('active');
+                });
+            });
+        }
+    });
+</script>

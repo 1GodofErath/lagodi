@@ -1,115 +1,161 @@
-<!-- Модальні вікна -->
-<div class="modal" id="edit-order-modal">
-    <div class="modal-content">
+<!-- Модальне вікно деталей замовлення -->
+<div id="order-details-modal" class="modal">
+    <div class="modal-dialog modal-lg">
         <div class="modal-header">
-            <h3 class="modal-title">Редагування замовлення <span id="edit-order-id"></span></h3>
-            <button class="close-modal">&times;</button>
-        </div>
-        <form method="POST" action="dashboard.php" enctype="multipart/form-data" id="edit-order-form">
-            <input type="hidden" name="edit_order" value="1">
-            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-            <input type="hidden" name="order_id" id="modal-order-id">
-            <input type="hidden" name="dropped_files" id="edit-dropped_files_data" value="">
-
-            <div class="form-group">
-                <label for="edit-service" class="required-field">Послуга</label>
-                <select name="service" id="edit-service" class="form-control" required>
-                    <option value="">Виберіть послугу</option>
-                    <option value="Ремонт телефону">Ремонт телефону</option>
-                    <option value="Ремонт планшету">Ремонт планшету</option>
-                    <option value="Ремонт ноутбука">Ремонт ноутбука</option>
-                    <option value="Ремонт комп'ютера">Ремонт комп'ютера</option>
-                    <option value="Налаштування ПЗ">Налаштування ПЗ</option>
-                    <option value="Інше">Інше</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-device_type" class="required-field">Тип пристрою</label>
-                <input type="text" name="device_type" id="edit-device_type" class="form-control" required>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-details" class="required-field">Опис проблеми</label>
-                <textarea name="details" id="edit-details" class="form-control" rows="5" required></textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-drop-zone" class="file-upload-label">Прикріпити додаткові файли (опціонально)</label>
-                <div id="edit-drop-zone" class="drop-zone">
-                    <span class="drop-zone-prompt">Перетягніть файли сюди або натисніть для вибору</span>
-                    <input type="file" name="order_files[]" id="edit-drop-zone-input" class="drop-zone-input" multiple style="display: none;">
-                </div>
-                <div id="edit-file-preview-container"></div>
-                <div class="file-types-info" style="font-size: 0.8rem; color: #777; margin-top: 5px;">
-                    Допустимі формати: jpg, jpeg, png, gif, mp4, avi, mov, pdf, doc, docx, txt. Максимальний розмір: 10 МБ.
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-phone" class="required-field">Номер телефону</label>
-                <input type="tel" name="phone" id="edit-phone" class="form-control" required>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-address" class="required-field">Адреса</label>
-                <input type="text" name="address" id="edit-address" class="form-control" required>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-delivery_method" class="required-field">Спосіб доставки</label>
-                <select name="delivery_method" id="edit-delivery_method" class="form-control" required>
-                    <option value="">Виберіть спосіб доставки</option>
-                    <option value="Самовивіз">Самовивіз</option>
-                    <option value="Нова пошта">Нова пошта</option>
-                    <option value="Кур'єр">Кур'єр</option>
-                    <option value="Укрпошта">Укрпошта</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="edit-user_comment">Коментар до замовлення</label>
-                <textarea name="user_comment" id="edit-user_comment" class="form-control" rows="3"></textarea>
-            </div>
-
-            <button type="submit" class="btn">
-                <i class="fas fa-save"></i> Зберегти зміни
+            <h3 class="modal-title">Деталі замовлення #<span id="detail-order-id"></span></h3>
+            <button type="button" class="close-modal" onclick="closeModal('order-details-modal')">
+                <i class="fas fa-times"></i>
             </button>
-        </form>
-    </div>
-</div>
-
-<div class="modal" id="add-comment-modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 class="modal-title">Додати коментар до замовлення <span id="comment-order-id"></span></h3>
-            <button class="close-modal">&times;</button>
         </div>
-        <form method="POST" action="dashboard.php" id="add-comment-form">
-            <input type="hidden" name="add_comment" value="1">
-            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-            <input type="hidden" name="order_id" id="comment-order-id-input">
-
-            <div class="form-group">
-                <label for="comment" class="required-field">Ваш коментар</label>
-                <textarea name="comment" id="comment" class="form-control" rows="5" required></textarea>
+        <div class="modal-body">
+            <div id="order-info-container">
+                <div class="loading-spinner"></div>
             </div>
 
-            <button type="submit" class="btn">
-                <i class="fas fa-comment"></i> Додати коментар
-            </button>
-        </form>
+            <h4 class="section-title">Файли</h4>
+            <div id="detail-files-container">
+                <div class="loading-spinner"></div>
+            </div>
+
+            <h4 class="section-title">Коментарі</h4>
+            <div id="detail-comments-container">
+                <div class="loading-spinner"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeModal('order-details-modal')">Закрити</button>
+            <button type="button" class="btn btn-primary" id="detail-edit-order-btn">Редагувати</button>
+        </div>
     </div>
 </div>
 
-<div class="modal" id="file-view-modal">
-    <div class="modal-content">
+<!-- Модальне вікно додавання коментаря -->
+<div id="add-comment-modal" class="modal">
+    <div class="modal-dialog">
         <div class="modal-header">
-            <h3 class="modal-title">Перегляд файлу: <span id="file-name-title"></span></h3>
-            <button class="close-modal">&times;</button>
+            <h3 class="modal-title">Додати коментар до замовлення #<span id="comment-order-id"></span></h3>
+            <button type="button" class="close-modal" onclick="closeModal('add-comment-modal')">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
-        <div id="file-content-container" class="media-viewer">
-            <!-- Тут буде відображено вміст файлу -->
+        <div class="modal-body">
+            <form id="comment-form">
+                <input type="hidden" name="add_comment" value="1">
+                <input type="hidden" name="order_id" id="comment-order-id-input">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
+                <div class="form-group">
+                    <label for="comment" class="form-label">Текст коментаря*</label>
+                    <textarea id="comment" name="comment" class="form-control" rows="5" required></textarea>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeModal('add-comment-modal')">Скасувати</button>
+            <button type="button" class="btn btn-primary" id="submit-comment">Відправити</button>
         </div>
     </div>
 </div>
+
+<!-- Модальне вікно редагування замовлення -->
+<div id="edit-order-modal" class="modal">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+            <h3 class="modal-title">Редагування замовлення #<span id="edit-order-id"></span></h3>
+            <button type="button" class="close-modal" onclick="closeModal('edit-order-modal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="order-form-tabs">
+                <div class="order-form-tab active" data-tab="edit-details">Деталі замовлення</div>
+                <div class="order-form-tab" data-tab="edit-files">Файли</div>
+            </div>
+
+            <form id="edit-order-form" enctype="multipart/form-data">
+                <input type="hidden" name="edit_order" value="1">
+                <input type="hidden" name="order_id" id="modal-order-id">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
+                <!-- Вміст вкладок буде заповнено динамічно при відкритті модального вікна -->
+                <div id="edit-details-content" class="order-form-content active"></div>
+                <div id="edit-files-content" class="order-form-content"></div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeModal('edit-order-modal')">Скасувати</button>
+            <button type="button" class="btn btn-primary" id="submit-edit-order">Зберегти зміни</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно підтвердження скасування замовлення -->
+<div id="cancel-order-modal" class="modal modal-confirm">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-header">
+            <h3 class="modal-title">Скасування замовлення</h3>
+            <button type="button" class="close-modal" onclick="closeModal('cancel-order-modal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="confirm-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h4 class="confirm-title">Ви впевнені?</h4>
+            <p class="confirm-text">Ви дійсно бажаєте скасувати замовлення #<span id="cancel-order-id"></span>? Цю дію неможливо скасувати.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeModal('cancel-order-modal')">Скасувати</button>
+            <button type="button" class="btn btn-danger" id="confirm-cancel-order">Так, скасувати</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно повідомлення -->
+<div id="message-modal" class="modal">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-header">
+            <h3 class="modal-title" id="message-title">Повідомлення</h3>
+            <button type="button" class="close-modal" onclick="closeModal('message-modal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p id="message-text"></p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="closeModal('message-modal')">Зрозуміло</button>
+        </div>
+    </div>
+</div>
+
+<!-- Скрипти для роботи з модальними вікнами -->
+<script>
+    // Функція для відкриття модального вікна
+    function openModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    // Функція для закриття модального вікна
+    function closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    }
+
+    // Закриття модальних вікон при кліку за межами вмісту
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeModal(this.id);
+            }
+        });
+    });
+</script>

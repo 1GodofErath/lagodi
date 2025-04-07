@@ -1,115 +1,303 @@
-<div class="tab-content" id="notifications-content">
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title">Всі сповіщення</h2>
-            <?php if (!empty($unread_notifications)): ?>
-                <button class="btn" id="mark-all-notifications">
-                    <i class="fas fa-check-double"></i> Позначити всі як прочитані
-                </button>
-            <?php endif; ?>
+<?php
+// Отримання параметрів для сторінки
+$notificationPage = isset($_GET['npage']) ? max(1, (int)$_GET['npage']) : 1;
+$notificationPerPage = 20;
+
+// Отримання сповіщень з пагінацією
+$notificationsData = $comment->getUserNotifications($userId, $notificationPage, $notificationPerPage);
+$notifications = $notificationsData['notifications'];
+$notificationPagination = $notificationsData['pagination'];
+
+// Отримання кількості непрочитаних
+$unreadCount = $comment->getUnreadNotificationsCount($userId);
+?>
+
+<div class="page-header">
+    <h1>Сповіщення</h1>
+
+    <?php if ($unreadCount > 0): ?>
+        <div class="page-actions">
+            <button id="mark-all-notifications-read" class="btn btn-primary">
+                <i class="fas fa-check-double"></i> Позначити всі як прочитані (<?= $unreadCount ?>)
+            </button>
         </div>
+    <?php endif; ?>
+</div>
 
-        <div class="notifications-list">
-            <?php if (!empty($unread_notifications)): ?>
-                <h3>Нові сповіщення</h3>
-                <?php foreach ($unread_notifications as $notification): ?>
-                    <div class="notification-item unread" data-order-id="<?= $notification['order_id'] ?>" data-notification-id="<?= $notification['id'] ?>">
-                        <div class="notification-title"><?= htmlspecialchars($notification['title']) ?></div>
-                        <div class="notification-message"><?= htmlspecialchars($notification['description']) ?></div>
-                        <div class="notification-service"><?= htmlspecialchars($notification['service']) ?></div>
-                        <div class="notification-time">
-                            <?= date('d.m.Y H:i', strtotime($notification['created_at'])) ?>
+<div class="card">
+    <div class="card-body">
+        <?php if (empty($notifications)): ?>
+            <div class="empty-state">
+                <i class="fas fa-bell-slash"></i>
+                <h3>Сповіщення відсутні</h3>
+                <p>У вас немає сповіщень.</p>
+            </div>
+        <?php else: ?>
+            <div class="notifications-list-full">
+                <?php foreach ($notifications as $notification): ?>
+                    <div class="notification-item <?= $notification['is_read'] ? 'read' : '' ?>" data-id="<?= $notification['id'] ?>">
+                        <div class="notification-icon">
+                            <?php
+                            $iconClass = 'fas fa-bell';
+                            switch ($notification['type']) {
+                                case 'comment': $iconClass = 'fas fa-comment-alt'; break;
+                                case 'status_update': $iconClass = 'fas fa-sync-alt'; break;
+                                case 'admin_message': $iconClass = 'fas fa-envelope'; break;
+                                case 'new_order': $iconClass = 'fas fa-clipboard-check'; break;
+                                case 'order_cancelled': $iconClass = 'fas fa-times-circle'; break;
+                                case 'order_updated': $iconClass = 'fas fa-edit'; break;
+                            }
+                            ?>
+                            <i class="<?= $iconClass ?>"></i>
                         </div>
+                        <div class="notification-content">
+                            <div class="notification-header">
+                                <div class="notification-title"><?= htmlspecialchars($notification['title']) ?></div>
+                                <div class="notification-time"><?= formatDateTime($notification['created_at']) ?></div>
+                            </div>
+                            <div class="notification-text"><?= htmlspecialchars($notification['content']) ?></div>
+
+                            <?php if ($notification['order_id']): ?>
+                                <div class="notification-actions">
+                                    <button type="button" class="btn btn-primary btn-sm view-order-btn" data-id="<?= $notification['order_id'] ?>">
+                                        Переглянути замовлення
+                                    </button>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <?php if (!$notification['is_read']): ?>
+                            <div class="notification-status">
+                                <button class="mark-read-btn" title="Позначити як прочитане">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
+            </div>
 
-                <!-- Додаємо розділювач, якщо є також прочитані сповіщення -->
-                <hr style="margin: 20px 0;">
-            <?php endif; ?>
+            <!-- Пагінація -->
+            <?php if ($notificationPagination['pages'] > 1): ?>
+                <div class="pagination">
+                    <ul class="pagination-list">
+                        <?php if ($notificationPagination['current'] > 1): ?>
+                            <li class="pagination-item">
+                                <a href="?tab=notifications&npage=<?= $notificationPagination['current'] - 1 ?>" class="pagination-link">
+                                    <i class="fas fa-chevron-left"></i>
+                                </a>
+                            </li>
+                        <?php endif; ?>
 
-            <?php
-            // Отримання прочитаних сповіщень (обмежено до 20)
-            $stmt = $conn->prepare("
-                SELECT n.*, o.service 
-                FROM notifications n 
-                JOIN orders o ON n.order_id = o.id 
-                WHERE n.user_id = ? AND n.is_read = 1 
-                ORDER BY n.created_at DESC 
-                LIMIT 20
-            ");
-            $stmt->bind_param("i", $user_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $read_notifications = [];
+                        <?php
+                        // Визначаємо діапазон сторінок для відображення
+                        $startPage = max(1, $notificationPagination['current'] - 2);
+                        $endPage = min($notificationPagination['pages'], $notificationPagination['current'] + 2);
 
-            while ($row = $result->fetch_assoc()) {
-                // Формуємо зрозумілий опис сповіщення в залежності від типу
-                $description = '';
-                $title = '';
+                        // Якщо поточна сторінка близько до початку, показуємо більше сторінок після
+                        if ($startPage <= 3) {
+                            $endPage = min($notificationPagination['pages'], 5);
+                        }
 
-                switch($row['type']) {
-                    case 'status':
-                        $title = "Статус замовлення #{$row['order_id']} змінено";
-                        $description = "Новий статус: {$row['new_status']}";
-                        break;
+                        // Якщо поточна сторінка близько до кінця, показуємо більше сторінок до
+                        if ($endPage >= $notificationPagination['pages'] - 2) {
+                            $startPage = max(1, $notificationPagination['pages'] - 4);
+                        }
 
-                    case 'comment':
-                        // Отримуємо інформацію про коментар
-                        $comment_stmt = $conn->prepare("
-                            SELECT c.content, u.username 
-                            FROM comments c 
-                            JOIN users u ON c.user_id = u.id 
-                            WHERE c.id = ?
-                        ");
-                        $comment_id = $row['content'];
-                        $comment_stmt->bind_param("i", $comment_id);
-                        $comment_stmt->execute();
-                        $comment_result = $comment_stmt->get_result();
-                        $comment_data = $comment_result->fetch_assoc();
+                        // Показуємо першу сторінку та "..."
+                        if ($startPage > 1) {
+                            echo '<li class="pagination-item"><a href="?tab=notifications&npage=1" class="pagination-link">1</a></li>';
 
-                        $title = "Коментар до замовлення #{$row['order_id']}";
-                        $description = "Адміністратор {$comment_data['username']} додав коментар";
-                        break;
+                            if ($startPage > 2) {
+                                echo '<li class="pagination-item"><span class="pagination-link disabled">...</span></li>';
+                            }
+                        }
 
-                    case 'system':
-                        $title = "Системне сповіщення для замовлення #{$row['order_id']}";
-                        $description = $row['content'];
-                        break;
-                }
+                        // Показуємо діапазон сторінок
+                        for ($i = $startPage; $i <= $endPage; $i++):
+                            ?>
+                            <li class="pagination-item">
+                                <a href="?tab=notifications&npage=<?= $i ?>" class="pagination-link <?= $i === $notificationPagination['current'] ? 'active' : '' ?>">
+                                    <?= $i ?>
+                                </a>
+                            </li>
+                        <?php endfor; ?>
 
-                $read_notifications[] = [
-                    'id' => $row['id'],
-                    'order_id' => $row['order_id'],
-                    'type' => $row['type'],
-                    'title' => $title,
-                    'description' => $description,
-                    'created_at' => $row['created_at'],
-                    'service' => $row['service']
-                ];
-            }
-            ?>
+                        <?php
+                        // Показуємо "..." та останню сторінку
+                        if ($endPage < $notificationPagination['pages']) {
+                            if ($endPage < $notificationPagination['pages'] - 1) {
+                                echo '<li class="pagination-item"><span class="pagination-link disabled">...</span></li>';
+                            }
 
-            <?php if (!empty($read_notifications)): ?>
-                <h3>Прочитані сповіщення</h3>
-                <?php foreach ($read_notifications as $notification): ?>
-                    <div class="notification-item" data-order-id="<?= $notification['order_id'] ?>">
-                        <div class="notification-title"><?= htmlspecialchars($notification['title']) ?></div>
-                        <div class="notification-message"><?= htmlspecialchars($notification['description']) ?></div>
-                        <div class="notification-service"><?= htmlspecialchars($notification['service']) ?></div>
-                        <div class="notification-time">
-                            <?= date('d.m.Y H:i', strtotime($notification['created_at'])) ?>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
+                            echo '<li class="pagination-item"><a href="?tab=notifications&npage=' . $notificationPagination['pages'] . '" class="pagination-link">' . $notificationPagination['pages'] . '</a></li>';
+                        }
+                        ?>
 
-            <?php if (empty($unread_notifications) && empty($read_notifications)): ?>
-                <div class="empty-notifications">
-                    <i class="fas fa-bell-slash" style="font-size: 3rem; color: #ccc; margin-bottom: 15px;"></i>
-                    <p>У вас немає сповіщень</p>
-                    <p style="font-size: 0.9rem; margin-top: 10px;">Тут будуть відображатися сповіщення про зміни статусу ваших замовлень та нові коментарі</p>
+                        <?php if ($notificationPagination['current'] < $notificationPagination['pages']): ?>
+                            <li class="pagination-item">
+                                <a href="?tab=notifications&npage=<?= $notificationPagination['current'] + 1 ?>" class="pagination-link">
+                                    <i class="fas fa-chevron-right"></i>
+                                </a>
+                            </li>
+                        <?php endif; ?>
+                    </ul>
                 </div>
             <?php endif; ?>
-        </div>
+        <?php endif; ?>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Позначення сповіщення як прочитаного
+        document.querySelectorAll('.mark-read-btn').forEach(function(button) {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const notificationItem = this.closest('.notification-item');
+                const notificationId = notificationItem.getAttribute('data-id');
+
+                markNotificationAsRead(notificationId, notificationItem);
+            });
+        });
+
+        // Позначення всіх сповіщень як прочитаних
+        const markAllReadBtn = document.getElementById('mark-all-notifications-read');
+        if (markAllReadBtn) {
+            markAllReadBtn.addEventListener('click', function() {
+                markAllNotificationsAsRead();
+            });
+        }
+
+        // Перегляд замовлення при кліку на сповіщення
+        document.querySelectorAll('.notification-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                // Перевіряємо, чи є кнопка перегляду замовлення
+                const viewOrderBtn = this.querySelector('.view-order-btn');
+                if (viewOrderBtn) {
+                    const orderId = viewOrderBtn.getAttribute('data-id');
+                    viewOrder(orderId);
+                }
+
+                // Позначаємо сповіщення як прочитане, якщо воно не прочитане
+                if (!this.classList.contains('read')) {
+                    const notificationId = this.getAttribute('data-id');
+                    markNotificationAsRead(notificationId, this);
+                }
+            });
+        });
+
+        // Функція позначення сповіщення як прочитаного
+        function markNotificationAsRead(notificationId, element) {
+            fetch('dashboard.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: new URLSearchParams({
+                    'mark_notification_read': '1',
+                    'notification_id': notificationId,
+                    'csrf_token': config.csrfToken
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Позначаємо сповіщення як прочитане у інтерфейсі
+                        if (element) {
+                            element.classList.add('read');
+                            const statusElement = element.querySelector('.notification-status');
+                            if (statusElement) {
+                                statusElement.remove();
+                            }
+                        }
+
+                        // Оновлюємо лічильник непрочитаних сповіщень
+                        updateNotificationCounter(data.unreadCount);
+
+                        // Перевіряємо, чи залишилися непрочитані сповіщення
+                        if (data.unreadCount === 0) {
+                            const markAllBtn = document.getElementById('mark-all-notifications-read');
+                            if (markAllBtn) {
+                                markAllBtn.style.display = 'none';
+                            }
+                        }
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Функція позначення всіх сповіщень як прочитаних
+        function markAllNotificationsAsRead() {
+            fetch('dashboard.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: new URLSearchParams({
+                    'mark_all_notifications_read': '1',
+                    'csrf_token': config.csrfToken
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Позначаємо всі сповіщення як прочитані в інтерфейсі
+                        document.querySelectorAll('.notification-item:not(.read)').forEach(item => {
+                            item.classList.add('read');
+                            const statusElement = item.querySelector('.notification-status');
+                            if (statusElement) {
+                                statusElement.remove();
+                            }
+                        });
+
+                        // Приховуємо кнопку "Позначити всі як прочитані"
+                        const markAllBtn = document.getElementById('mark-all-notifications-read');
+                        if (markAllBtn) {
+                            markAllBtn.style.display = 'none';
+                        }
+
+                        // Оновлюємо лічильник непрочитаних сповіщень
+                        updateNotificationCounter(0);
+
+                        showNotification('success', 'Всі сповіщення позначені як прочитані');
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Оновлення лічильника непрочитаних сповіщень
+        function updateNotificationCounter(count) {
+            // Оновлюємо лічильник на кнопці в шапці
+            const badge = document.querySelector('#notifications-toggle .badge');
+            if (count > 0) {
+                if (badge) {
+                    badge.textContent = count;
+                } else {
+                    const newBadge = document.createElement('span');
+                    newBadge.className = 'badge';
+                    newBadge.textContent = count;
+                    document.getElementById('notifications-toggle').appendChild(newBadge);
+                }
+            } else if (badge) {
+                badge.remove();
+            }
+
+            // Оновлюємо лічильник у боковому меню
+            const menuBadge = document.querySelector('.nav-item a[href="?tab=notifications"] .badge');
+            if (count > 0) {
+                if (menuBadge) {
+                    menuBadge.textContent = count;
+                } else {
+                    const newBadge = document.createElement('span');
+                    newBadge.className = 'badge';
+                    newBadge.textContent = count;
+                    document.querySelector('.nav-item a[href="?tab=notifications"]').appendChild(newBadge);
+                }
+            } else if (menuBadge) {
+                menuBadge.remove();
+            }
+        }
+    });
+</script>
