@@ -98,6 +98,7 @@
                     </div>
                 </div>
 
+
                 <div class="setting-group">
                     <h3 class="setting-title">Двофакторна автентифікація</h3>
                     <div class="setting-value">
@@ -281,7 +282,7 @@
             emailNotificationsCheckbox.addEventListener('change', function() {
                 const enabled = this.checked ? 1 : 0;
 
-                // Зберігаємо налаштування
+                // Зберігаємо налаштування - fixed request format
                 fetch('dashboard.php', {
                     method: 'POST',
                     headers: {
@@ -329,23 +330,21 @@
             });
         }
 
-        // Перегляд активних сеансів
+// Replace lines 333-349 in settings_tab.php with:
+
+// Перегляд активних сеансів
         const showSessionsBtn = document.getElementById('show-sessions-btn');
         if (showSessionsBtn) {
             showSessionsBtn.addEventListener('click', function() {
-                // Тут можемо реалізувати відкриття модального вікна з активними сеансами
-                // або перенаправлення на окрему сторінку з активними сеансами
-                showNotification('info', 'Функціональність перегляду активних сеансів буде доступна незабаром');
+                showActiveSessions();
             });
         }
 
-        // Перегляд журналу активності
+// Перегляд журналу активності
         const showActivityBtn = document.getElementById('show-activity-btn');
         if (showActivityBtn) {
             showActivityBtn.addEventListener('click', function() {
-                // Тут можемо реалізувати відкриття модального вікна з журналом активності
-                // або перенаправлення на окрему сторінку з журналом активності
-                showNotification('info', 'Функціональність перегляду журналу активності буде доступна незабаром');
+                showActivityLog();
             });
         }
 

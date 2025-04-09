@@ -32,6 +32,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Ініціалізація сеансу користувача
     initSessionMonitor();
 
+    // Load theme from localStorage if it exists
+    const savedTheme = localStorage.getItem('user-theme');
+    if (savedTheme && savedTheme !== config.theme) {
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        // Update the config theme value
+        config.theme = savedTheme;
+    }
+
     // Обробник скидання фільтрів
     const resetFiltersBtn = document.getElementById('reset-filters');
     if (resetFiltersBtn) {
@@ -39,7 +47,19 @@ document.addEventListener('DOMContentLoaded', function() {
             window.location.href = '?tab=orders';
         });
     }
+
+    // Initialize tab-specific functionality
+    initTabSpecificFunctionality();
 });
+
+// Create a function to init buttons on tab changes
+function initTabSpecificFunctionality() {
+    const currentTab = window.location.search.match(/tab=([^&]*)/);
+    if (!currentTab || currentTab[1] === 'orders') {
+        // Initialize order-specific functionality
+        initOrderButtons();
+    }
+}
 
 /**
  * Ініціалізація випадаючих меню
@@ -215,10 +235,13 @@ function initTabs() {
  * Ініціалізація кнопок перегляду/редагування/скасування замовлення
  */
 function initOrderButtons() {
+    console.log('Initializing order buttons');
+
     // Обробка кнопок перегляду замовлення
     document.querySelectorAll('.view-order-btn').forEach(button => {
         button.addEventListener('click', function() {
             const orderId = this.getAttribute('data-id');
+            console.log('View order clicked:', orderId);
             viewOrder(orderId);
         });
     });
@@ -401,13 +424,13 @@ function editOrder(orderId) {
                         fileItem.className = 'file-item';
                         fileItem.setAttribute('data-id', file.id);
 
-                        const isImage = file.file_type === 'image' || file.file_mime.startsWith('image/');
+                        const isImage = file.file_type === 'image' || (file.file_mime && file.file_mime.startsWith('image/'));
 
                         fileItem.innerHTML = `
                         <div class="file-thumbnail">
                             ${isImage ?
                             `<img src="${file.file_path}" alt="${file.original_name}">` :
-                            `<i class="${getFileIconClass(file.file_mime, file.original_name)}"></i>`
+                            `<i class="${getFileIconClass(file.file_mime || '', file.original_name)}"></i>`
                         }
                         </div>
                         <div class="file-name">${file.original_name}</div>
@@ -1103,8 +1126,9 @@ function changePassword() {
         return;
     }
 
-    // Збираємо дані форми
+    // Fix: Create proper FormData object and add change_password parameter
     const formData = new FormData(form);
+    formData.append('change_password', '1');
 
     // Показуємо індикатор завантаження
     const submitButton = document.getElementById('save-password-btn');
@@ -1164,8 +1188,9 @@ function changeEmail() {
         return;
     }
 
-    // Збираємо дані форми
+    // Fix: Create proper FormData object and add change_email parameter
     const formData = new FormData(form);
+    formData.append('change_email', '1'); // Add this missing parameter
 
     // Показуємо індикатор завантаження
     const submitButton = document.getElementById('save-email-btn');
@@ -1259,6 +1284,9 @@ function initThemeHandlers() {
 function changeTheme(theme) {
     // Змінюємо тему на сторінці
     document.documentElement.setAttribute('data-theme', theme);
+
+    // Зберігаємо тему в localStorage для локального збереження між сторінками
+    localStorage.setItem('user-theme', theme);
 
     // Відправляємо запит на збереження теми
     fetch('dashboard.php', {
@@ -1681,7 +1709,7 @@ function getFileIconClass(mimeType, fileName) {
  * Форматує розмір файлу в читабельний формат
  */
 function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Б';
+    if (!bytes || bytes === 0) return '0 Б';
 
     const k = 1024;
     const sizes = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
@@ -1916,63 +1944,78 @@ function isOrderCancellable(status) {
  * Генерує HTML для відображення інформації про замовлення
  */
 function generateOrderInfoHTML(order) {
-    const createdAt = formatDateTime(order.created_at);
-    const updatedAt = formatDateTime(order.updated_at);
-    const estimatedDate = formatDate(order.estimated_completion_date);
+    // Перевірка необхідних полів
+    if (!order) {
+        return '<div class="empty-state-mini">Дані замовлення відсутні</div>';
+    }
+
+    const createdAt = formatDateTime(order.created_at || '');
+    const updatedAt = formatDateTime(order.updated_at || '');
+    const estimatedDate = formatDate(order.estimated_completion_date || '');
 
     let statusClass = 'status-default';
     if (order.status) {
         statusClass = getStatusClass(order.status);
     }
 
-    // Форматування ціни
-    const price = order.price ? formatCurrency(order.price) : 'Не вказана';
+    // Форматування ціни з безпечною перевіркою
+    const price = (order.price || order.price === 0) ? formatCurrency(order.price) : 'Не вказана';
+
+    // Безпечне отримання значень з перевіркою
+    const service = order.service || 'Не вказано';
+    const deviceType = order.device_type || 'Не вказано';
+    const status = order.status || 'Невідомо';
+    const details = order.details || 'Не вказано';
+    const phone = order.phone || 'Не вказано';
+    const deliveryMethod = getDeliveryMethodName(order.delivery_method) || 'Не вказано';
+    const address = order.address || '';
+    const userComment = order.user_comment || '';
 
     return `
         <div class="order-details-full">
             <div class="order-detail-row">
                 <div class="order-detail-label">Послуга</div>
-                <div class="order-detail-value">${order.service}</div>
+                <div class="order-detail-value">${service}</div>
             </div>
             
             <div class="order-detail-row">
                 <div class="order-detail-label">Пристрій</div>
-                <div class="order-detail-value">${order.device_type || 'Не вказано'}</div>
+                <div class="order-detail-value">${deviceType}</div>
             </div>
             
             <div class="order-detail-row">
                 <div class="order-detail-label">Статус</div>
                 <div class="order-detail-value">
-                    <span class="status-badge ${statusClass}">${order.status}</span>
+                    <span class="status-badge ${statusClass}">${status}</span>
                 </div>
             </div>
             
             <div class="order-detail-row">
                 <div class="order-detail-label">Опис проблеми</div>
-                <div class="order-detail-value">${order.details || 'Не вказано'}</div>
+                <div class="order-detail-value">${details}</div>
             </div>
             
             <div class="order-detail-row">
                 <div class="order-detail-label">Контактний телефон</div>
-                <div class="order-detail-value">${order.phone || 'Не вказано'}</div>
+                <div class="order-detail-value">${phone}</div>
             </div>
             
             <div class="order-detail-row">
                 <div class="order-detail-label">Спосіб доставки</div>
-                <div class="order-detail-value">${getDeliveryMethodName(order.delivery_method) || 'Не вказано'}</div>
+                <div class="order-detail-value">${deliveryMethod}</div>
             </div>
             
-            ${order.address ? `
+            ${address ? `
             <div class="order-detail-row">
                 <div class="order-detail-label">Адреса</div>
-                <div class="order-detail-value">${order.address}</div>
+                <div class="order-detail-value">${address}</div>
             </div>
             ` : ''}
             
-            ${order.user_comment ? `
+            ${userComment ? `
             <div class="order-detail-row">
                 <div class="order-detail-label">Коментар клієнта</div>
-                <div class="order-detail-value">${order.user_comment}</div>
+                <div class="order-detail-value">${userComment}</div>
             </div>
             ` : ''}
             
@@ -2005,7 +2048,7 @@ function generateOrderInfoHTML(order) {
  * Генерує HTML для відображення файлів замовлення
  */
 function generateOrderFilesHTML(files) {
-    if (!files || files.length === 0) {
+    if (!files || !Array.isArray(files) || files.length === 0) {
         return `
             <div class="empty-state-mini">
                 <i class="fas fa-file"></i>
@@ -2017,26 +2060,30 @@ function generateOrderFilesHTML(files) {
     let html = '<div class="order-files-grid">';
 
     files.forEach(file => {
-        const isImage = file.file_type === 'image' || file.file_mime.startsWith('image/');
-        const isVideo = file.file_type === 'video' || file.file_mime.startsWith('video/');
+        if (!file) return;
+
+        const isImage = file.file_type === 'image' || (file.file_mime && file.file_mime.startsWith('image/'));
+        const filePath = file.file_path || '#';
+        const originalName = file.original_name || 'Файл';
+        const fileSize = file.file_size ? formatFileSize(file.file_size) : '';
 
         html += `
             <div class="file-card">
                 <div class="file-thumbnail">
                     ${isImage ?
-            `<img src="${file.file_path}" alt="${file.original_name}">` :
-            `<i class="${getFileIconClass(file.file_mime, file.original_name)}"></i>`
+            `<img src="${filePath}" alt="${originalName}">` :
+            `<i class="${getFileIconClass(file.file_mime || '', originalName)}"></i>`
         }
                 </div>
                 <div class="file-info">
-                    <div class="file-name" title="${file.original_name}">${file.original_name}</div>
-                    <div class="file-size">${formatFileSize(file.file_size)}</div>
+                    <div class="file-name" title="${originalName}">${originalName}</div>
+                    ${fileSize ? `<div class="file-size">${fileSize}</div>` : ''}
                 </div>
                 <div class="file-actions">
-                    <a href="${file.file_path}" target="_blank" class="file-action" title="Відкрити">
+                    <a href="${filePath}" target="_blank" class="file-action" title="Відкрити">
                         <i class="fas fa-external-link-alt"></i>
                     </a>
-                    <a href="${file.file_path}" download="${file.original_name}" class="file-action" title="Завантажити">
+                    <a href="${filePath}" download="${originalName}" class="file-action" title="Завантажити">
                         <i class="fas fa-download"></i>
                     </a>
                 </div>
@@ -2053,7 +2100,7 @@ function generateOrderFilesHTML(files) {
  * Генерує HTML для відображення коментарів замовлення
  */
 function generateOrderCommentsHTML(comments) {
-    if (!comments || comments.length === 0) {
+    if (!comments || !Array.isArray(comments) || comments.length === 0) {
         return `
             <div class="empty-state-mini">
                 <i class="fas fa-comments"></i>
@@ -2065,13 +2112,17 @@ function generateOrderCommentsHTML(comments) {
     let html = '';
 
     comments.forEach(comment => {
+        if (!comment) return;
+
         const isAdmin = comment.is_admin == 1 || comment.author_role === 'admin';
-        const date = formatDateTime(comment.created_at);
+        const date = formatDateTime(comment.created_at || '');
+        const commentText = comment.comment || '';
+        const authorName = comment.author_display_name || comment.author_name || 'Користувач';
 
         // Аватар користувача
         let avatarHtml = '<i class="fas fa-user"></i>';
         if (comment.author_avatar) {
-            avatarHtml = `<img src="/uploads/avatars/${comment.author_avatar}" alt="${comment.author_display_name || comment.author_name || 'Користувач'}">`;
+            avatarHtml = `<img src="/uploads/avatars/${comment.author_avatar}" alt="${authorName}">`;
         }
 
         html += `
@@ -2082,12 +2133,12 @@ function generateOrderCommentsHTML(comments) {
                 <div class="comment-content">
                     <div class="comment-header">
                         <div class="comment-author">
-                            ${comment.author_display_name || comment.author_name || 'Користувач'}
+                            ${authorName}
                             ${isAdmin ? '<span class="admin-badge">Адміністратор</span>' : ''}
                         </div>
                         <div class="comment-date">${date}</div>
                     </div>
-                    <div class="comment-text">${comment.comment}</div>
+                    <div class="comment-text">${commentText}</div>
                 </div>
             </div>
         `;
@@ -2100,7 +2151,7 @@ function generateOrderCommentsHTML(comments) {
  * Генерує HTML для відображення історії замовлення
  */
 function generateOrderHistoryHTML(history) {
-    if (!history || history.length === 0) {
+    if (!history || !Array.isArray(history) || history.length === 0) {
         return `
             <div class="empty-state-mini">
                 <i class="fas fa-history"></i>
@@ -2112,10 +2163,18 @@ function generateOrderHistoryHTML(history) {
     let html = '<div class="order-history-list">';
 
     history.forEach(item => {
-        const date = formatDateTime(item.changed_at);
-        const changeText = item.previous_status ?
-            `Статус змінено з <span class="status-old">${item.previous_status}</span> на <span class="status-new">${item.new_status}</span>` :
-            `Замовлення створено зі статусом <span class="status-new">${item.new_status}</span>`;
+        if (!item) return;
+
+        const date = formatDateTime(item.changed_at || '');
+        const authorName = item.changed_by_display_name || item.changed_by_name || 'Система';
+        const comment = item.comment || '';
+
+        const previousStatus = item.previous_status || '';
+        const newStatus = item.new_status || 'Новий';
+
+        const changeText = previousStatus ?
+            `Статус змінено з <span class="status-old">${previousStatus}</span> на <span class="status-new">${newStatus}</span>` :
+            `Замовлення створено зі статусом <span class="status-new">${newStatus}</span>`;
 
         html += `
             <div class="history-item">
@@ -2128,9 +2187,9 @@ function generateOrderHistoryHTML(history) {
                         <div class="history-date">${date}</div>
                     </div>
                     <div class="history-author">
-                        ${item.changed_by_display_name || item.changed_by_name || 'Система'}
+                        ${authorName}
                     </div>
-                    ${item.comment ? `<div class="history-comment">${item.comment}</div>` : ''}
+                    ${comment ? `<div class="history-comment">${comment}</div>` : ''}
                 </div>
             </div>
         `;
@@ -2147,13 +2206,19 @@ function generateOrderHistoryHTML(history) {
 function formatDate(dateString) {
     if (!dateString) return '';
 
-    const date = new Date(dateString);
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return ''; // Перевірка на валідність дати
 
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
 
-    return `${day}.${month}.${year}`;
+        return `${day}.${month}.${year}`;
+    } catch (e) {
+        console.error('Помилка форматування дати:', e);
+        return '';
+    }
 }
 
 /**
@@ -2162,26 +2227,39 @@ function formatDate(dateString) {
 function formatDateTime(dateString) {
     if (!dateString) return '';
 
-    const date = new Date(dateString);
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return ''; // Перевірка на валідність дати
 
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
 
-    return `${day}.${month}.${year} ${hours}:${minutes}`;
+        return `${day}.${month}.${year} ${hours}:${minutes}`;
+    } catch (e) {
+        console.error('Помилка форматування дати і часу:', e);
+        return '';
+    }
 }
 
 /**
  * Форматує ціну у вигляді валюти
  */
 function formatCurrency(value) {
-    return new Intl.NumberFormat('uk-UA', {
-        style: 'currency',
-        currency: 'UAH',
-        minimumFractionDigits: 2
-    }).format(value);
+    if (value === null || value === undefined) return 'Не вказана';
+
+    try {
+        return new Intl.NumberFormat('uk-UA', {
+            style: 'currency',
+            currency: 'UAH',
+            minimumFractionDigits: 2
+        }).format(value);
+    } catch (e) {
+        console.error('Помилка форматування валюти:', e);
+        return value + ' грн';
+    }
 }
 
 /**
@@ -2220,4 +2298,329 @@ function getStatusClass(status) {
     }
 
     return 'status-default';
+}
+/**
+ * Show user activity log in a modal window
+ */
+function showActivityLog() {
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'get_activity_log': '1',
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Create modal content
+                let tableRows = '';
+
+                data.logs.forEach(log => {
+                    const createdAt = new Date(log.created_at);
+                    const formattedDate = createdAt.toLocaleDateString() + ' ' + createdAt.toLocaleTimeString();
+
+                    // Format action for display
+                    let action = log.action.replace(/_/g, ' ');
+                    action = action.charAt(0).toUpperCase() + action.slice(1);
+
+                    // Format details if available
+                    let details = '';
+                    if (log.details) {
+                        try {
+                            const detailsObj = JSON.parse(log.details);
+                            details = Object.entries(detailsObj)
+                                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                                .join('<br>');
+                        } catch (e) {
+                            details = log.details;
+                        }
+                    }
+
+                    tableRows += `
+                <tr>
+                    <td>${formattedDate}</td>
+                    <td>${action}</td>
+                    <td>${log.entity_type || ''} ${log.entity_id ? `#${log.entity_id}` : ''}</td>
+                    <td>${details}</td>
+                    <td>${log.ip_address || ''}</td>
+                </tr>`;
+                });
+
+                const modalContent = `
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Дата і час</th>
+                                <th>Дія</th>
+                                <th>Об'єкт</th>
+                                <th>Деталі</th>
+                                <th>IP-адреса</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+                ${data.has_more ? '<div class="text-center mt-3"><button id="load-more-activity" class="btn btn-primary">Завантажити більше</button></div>' : ''}
+            `;
+
+                // Show modal with activity log
+                showModal('Журнал активності', modalContent, 'lg');
+
+                // Add event listener for loading more activities
+                const loadMoreBtn = document.getElementById('load-more-activity');
+                if (loadMoreBtn && data.has_more) {
+                    loadMoreBtn.addEventListener('click', function() {
+                        loadMoreActivityLog(data.page + 1, this);
+                    });
+                }
+            } else {
+                showNotification('error', data.message || 'Не вдалося отримати журнал активності');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при отриманні журналу активності');
+        });
+}
+
+/**
+ * Load more activity log entries
+ * @param {number} page - Page number to load
+ * @param {HTMLElement} button - Load more button element
+ */
+function loadMoreActivityLog(page, button) {
+    // Show loading state
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Завантаження...';
+    button.disabled = true;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'get_activity_log': '1',
+            'page': page,
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Create rows for new log entries
+                let tableRows = '';
+
+                data.logs.forEach(log => {
+                    const createdAt = new Date(log.created_at);
+                    const formattedDate = createdAt.toLocaleDateString() + ' ' + createdAt.toLocaleTimeString();
+
+                    // Format action for display
+                    let action = log.action.replace(/_/g, ' ');
+                    action = action.charAt(0).toUpperCase() + action.slice(1);
+
+                    // Format details if available
+                    let details = '';
+                    if (log.details) {
+                        try {
+                            const detailsObj = JSON.parse(log.details);
+                            details = Object.entries(detailsObj)
+                                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                                .join('<br>');
+                        } catch (e) {
+                            details = log.details;
+                        }
+                    }
+
+                    tableRows += `
+                <tr>
+                    <td>${formattedDate}</td>
+                    <td>${action}</td>
+                    <td>${log.entity_type || ''} ${log.entity_id ? `#${log.entity_id}` : ''}</td>
+                    <td>${details}</td>
+                    <td>${log.ip_address || ''}</td>
+                </tr>`;
+                });
+
+                // Add new rows to the table
+                const tbody = document.querySelector('.modal-body table tbody');
+                tbody.innerHTML += tableRows;
+
+                // Update or remove the load more button
+                if (data.has_more) {
+                    button.innerHTML = 'Завантажити більше';
+                    button.disabled = false;
+                    button.setAttribute('data-page', data.page + 1);
+                } else {
+                    button.parentNode.remove();
+                }
+            } else {
+                showNotification('error', data.message || 'Не вдалося отримати додаткові записи журналу');
+                button.innerHTML = 'Завантажити більше';
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при отриманні додаткових записів журналу');
+            button.innerHTML = 'Завантажити більше';
+            button.disabled = false;
+        });
+}
+/**
+ * Show active sessions in a modal window
+ */
+function showActiveSessions() {
+    // Request active sessions data
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'get_sessions': '1',
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Create modal content
+                let tableRows = '';
+
+                data.sessions.forEach(session => {
+                    const isCurrentSession = session.is_current ? '<span class="badge bg-primary">Поточний</span>' : '';
+                    const lastActivity = new Date(session.last_activity);
+                    const formattedDate = lastActivity.toLocaleDateString() + ' ' + lastActivity.toLocaleTimeString();
+
+                    tableRows += `
+                <tr>
+                    <td>${session.browser} ${isCurrentSession}</td>
+                    <td>${session.ip_address}</td>
+                    <td>${formattedDate}</td>
+                    <td>
+                        ${!session.is_current ? `<button class="btn btn-danger btn-sm terminate-session" data-token="${session.session_token}">Завершити</button>` : ''}
+                    </td>
+                </tr>`;
+                });
+
+                const modalContent = `
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Пристрій</th>
+                                <th>IP-адреса</th>
+                                <th>Остання активність</th>
+                                <th>Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button id="terminate-all-sessions" class="btn btn-danger">Завершити всі інші сеанси</button>
+                </div>
+            `;
+
+                // Show modal with sessions
+                showModal('Активні сеанси', modalContent);
+
+                // Add event listeners for session termination
+                document.querySelectorAll('.terminate-session').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        terminateSession(this.getAttribute('data-token'));
+                    });
+                });
+
+                // Add event listener for terminating all sessions
+                const terminateAllBtn = document.getElementById('terminate-all-sessions');
+                if (terminateAllBtn) {
+                    terminateAllBtn.addEventListener('click', terminateAllSessions);
+                }
+            } else {
+                showNotification('error', data.message || 'Не вдалося отримати дані про активні сеанси');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при отриманні даних про активні сеанси');
+        });
+}
+
+/**
+ * Terminate a specific session
+ * @param {string} sessionToken - Token of the session to terminate
+ */
+function terminateSession(sessionToken) {
+    if (!confirm('Ви впевнені, що хочете завершити цей сеанс?')) return;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'terminate_session': '1',
+            'session_token': sessionToken,
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('success', 'Сеанс успішно завершено');
+                showActiveSessions(); // Refresh the sessions list
+            } else {
+                showNotification('error', data.message || 'Помилка при завершенні сеансу');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при завершенні сеансу');
+        });
+}
+
+/**
+ * Terminate all other sessions except the current one
+ */
+function terminateAllSessions() {
+    if (!confirm('Ви впевнені, що хочете завершити всі інші сеанси?')) return;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'terminate_all_sessions': '1',
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('success', 'Усі інші сеанси успішно завершено');
+                showActiveSessions(); // Refresh the sessions list
+            } else {
+                showNotification('error', data.message || 'Помилка при завершенні сеансів');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при завершенні сеансів');
+        });
 }

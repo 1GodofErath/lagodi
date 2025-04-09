@@ -191,7 +191,151 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
         ]);
         exit;
     }
+// Add these handlers to the AJAX section of dashboard.php
 
+// Get active sessions
+    if (isset($_POST['get_sessions'])) {
+        // Get current user's sessions
+        $sessions = $db->query(
+            "SELECT * FROM user_sessions WHERE user_id = ? ORDER BY last_activity DESC",
+            [$userId]
+        )->findAll();
+
+        $currentToken = $_COOKIE['remember_token'] ?? '';
+
+        // Process sessions for display
+        $sessionsData = [];
+        foreach ($sessions as $session) {
+            $browser = '';
+            if (!empty($session['user_agent'])) {
+                if (strpos($session['user_agent'], 'Firefox') !== false) {
+                    $browser = 'Firefox';
+                } elseif (strpos($session['user_agent'], 'Chrome') !== false && strpos($session['user_agent'], 'Edg') !== false) {
+                    $browser = 'Edge';
+                } elseif (strpos($session['user_agent'], 'Chrome') !== false) {
+                    $browser = 'Chrome';
+                } elseif (strpos($session['user_agent'], 'Safari') !== false) {
+                    $browser = 'Safari';
+                } elseif (strpos($session['user_agent'], 'MSIE') !== false || strpos($session['user_agent'], 'Trident') !== false) {
+                    $browser = 'Internet Explorer';
+                } else {
+                    $browser = 'Інший браузер';
+                }
+
+                // Add device type
+                if (strpos($session['user_agent'], 'Mobile') !== false) {
+                    $browser .= ' (Мобільний)';
+                } elseif (strpos($session['user_agent'], 'Tablet') !== false) {
+                    $browser .= ' (Планшет)';
+                } else {
+                    $browser .= ' (Комп\'ютер)';
+                }
+            }
+
+            $sessionsData[] = [
+                'id' => $session['id'],
+                'session_token' => $session['session_token'],
+                'ip_address' => $session['ip_address'] ?? 'Невідомо',
+                'browser' => $browser,
+                'last_activity' => $session['last_activity'],
+                'is_current' => ($session['session_token'] === $currentToken)
+            ];
+        }
+
+        echo json_encode([
+            'success' => true,
+            'sessions' => $sessionsData
+        ]);
+        exit;
+    }
+
+// Terminate a specific session
+    if (isset($_POST['terminate_session']) && isset($_POST['session_token'])) {
+        $sessionToken = $_POST['session_token'];
+        $currentToken = $_COOKIE['remember_token'] ?? '';
+
+        // Prevent terminating current session
+        if ($sessionToken === $currentToken) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Не можна завершити поточний сеанс'
+            ]);
+            exit;
+        }
+
+        // Delete the session
+        $success = $user->deleteSession($sessionToken);
+
+        if ($success) {
+            $user->logUserActivity($userId, 'session_terminated', 'user_sessions', null, [
+                'session_token' => substr($sessionToken, 0, 8) . '...' // Log only part of the token for security
+            ]);
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'Сеанс успішно завершено'
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Помилка при завершенні сеансу'
+            ]);
+        }
+        exit;
+    }
+
+// Terminate all other sessions
+    if (isset($_POST['terminate_all_sessions'])) {
+        $currentToken = $_COOKIE['remember_token'] ?? '';
+
+        // Delete all sessions except the current one
+        $success = $user->deleteAllSessions($userId, $currentToken);
+
+        if ($success) {
+            $user->logUserActivity($userId, 'all_sessions_terminated', 'user_sessions', null);
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'Всі інші сеанси успішно завершено'
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Помилка при завершенні сеансів'
+            ]);
+        }
+        exit;
+    }
+
+// Get activity log
+    if (isset($_POST['get_activity_log'])) {
+        $page = isset($_POST['page']) ? (int)$_POST['page'] : 1;
+        $perPage = 15;
+        $offset = ($page - 1) * $perPage;
+
+        // Get logs with pagination
+        $logs = $db->query(
+            "SELECT * FROM user_activity_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            [$userId, $perPage, $offset]
+        )->findAll();
+
+        // Count total logs for pagination
+        $totalLogs = $db->query(
+            "SELECT COUNT(*) FROM user_activity_logs WHERE user_id = ?",
+            [$userId]
+        )->findColumn();
+
+        $hasMore = ($offset + $perPage) < $totalLogs;
+
+        echo json_encode([
+            'success' => true,
+            'logs' => $logs,
+            'page' => $page,
+            'has_more' => $hasMore,
+            'total' => $totalLogs
+        ]);
+        exit;
+    }
     // Додавання коментаря
     if (isset($_POST['add_comment']) && isset($_POST['order_id']) && isset($_POST['comment'])) {
         $orderId = (int)$_POST['order_id'];
@@ -261,6 +405,7 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
     }
 
     // Створення нового замовлення
+    // Створення нового замовлення
     if (isset($_POST['create_order'])) {
         try {
             // Перевіряємо обов'язкові поля
@@ -270,6 +415,9 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
                     throw new Exception("Поле '{$field}' є обов'язковим");
                 }
             }
+
+            // Перевірка наявності файлів
+            $hasFiles = !empty($_FILES['files']) && is_array($_FILES['files']['name']) && !empty($_FILES['files']['name'][0]);
 
             $orderData = [
                 'device_type' => $_POST['device_type'],
@@ -286,6 +434,12 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
             }
 
             $orderId = $order->create($userId, $orderData);
+
+            // Обробка файлів, якщо вони є
+            if ($hasFiles) {
+                // Для обробки файлів, якщо є функціональність
+                // Код буде залежати від вашої реалізації
+            }
 
             // Відправлення повідомлення про створення замовлення
             $newOrderData = $order->getById($orderId);
