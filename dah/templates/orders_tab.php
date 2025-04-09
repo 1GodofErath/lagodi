@@ -100,7 +100,7 @@
                             </div>
                         <?php endif; ?>
 
-                        <?php if ($orderItem['price'] > 0): ?>
+                        <?php if (isset($orderItem['price']) && $orderItem['price'] > 0): ?>
                             <div class="order-detail">
                                 <div class="order-detail-label">Вартість</div>
                                 <div class="order-detail-value"><?= number_format($orderItem['price'], 2, '.', ' ') ?> грн</div>
@@ -242,7 +242,7 @@
                 for ($i = $startPage; $i <= $endPage; $i++):
                     ?>
                     <li class="pagination-item">
-                        <a href="?tab=orders&page=<?= $i ?><?= $filterStatus ? '&status=' . urlencode($filterStatus) : '' ?><?= $filterService ? '&service=' . urlencode($filterService) : '' ?><?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?>" class="pagination-link <?= $i === $pagination['current'] ? 'active' : '' ?>">
+                        <a href="?tab=orders&page=<?= $i ?><?= $filterStatus ? '&status=' . urlencode($filterStatus) : '' ?><?= $filterService ? '&service=' . urlencode($filterService) : '' ?><?= $searchQuery ? '&search=' . urlencode($searchQuery) : '' ?>" class="pagination-link<?= $i === $pagination['current'] ? ' active' : '' ?>">
                             <?= $i ?>
                         </a>
                     </li>

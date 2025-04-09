@@ -308,6 +308,80 @@ class Database {
     }
 
     /**
+     * Перевіряє, чи існує стовпець у таблиці
+     * @param string $tableName Назва таблиці
+     * @param string $columnName Назва стовпця
+     * @return bool Результат перевірки
+     */
+    public function columnExists($tableName, $columnName) {
+        try {
+            $sql = "SHOW COLUMNS FROM $tableName LIKE ?";
+            $this->statement = $this->connection->prepare($sql);
+            $this->statement->execute([$columnName]);
+            return $this->statement->rowCount() > 0;
+        } catch (PDOException $e) {
+            logError("Error checking if column exists: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Формує безпечний UPDATE запит, перевіряючи наявність стовпців
+     * @param string $tableName Назва таблиці
+     * @param array $columns Масив стовпців для оновлення у форматі [стовпець => значення]
+     * @param string $whereClause Умова WHERE без слова WHERE
+     * @param array $whereParams Параметри для умови WHERE
+     * @return bool Результат виконання запиту
+     */
+    public function safeUpdate($tableName, $columns, $whereClause, $whereParams = []) {
+        try {
+            // Перевіряємо наявність таблиці
+            if (!$this->tableExists($tableName)) {
+                logError("Table $tableName does not exist");
+                return false;
+            }
+
+            // Відфільтровуємо тільки існуючі стовпці
+            $validColumns = [];
+            foreach ($columns as $column => $value) {
+                if ($this->columnExists($tableName, $column)) {
+                    $validColumns[$column] = $value;
+                } else {
+                    logError("Column $column does not exist in table $tableName, skipping");
+                }
+            }
+
+            if (empty($validColumns)) {
+                logError("No valid columns to update in table $tableName");
+                return false;
+            }
+
+            // Формуємо SQL запит
+            $setClauses = [];
+            $params = [];
+
+            foreach ($validColumns as $column => $value) {
+                $setClauses[] = "`$column` = ?";
+                $params[] = $value;
+            }
+
+            $sql = "UPDATE $tableName SET " . implode(', ', $setClauses) . " WHERE $whereClause";
+
+            // Додаємо параметри WHERE до загального масиву параметрів
+            $params = array_merge($params, $whereParams);
+
+            // Виконуємо запит
+            $this->statement = $this->connection->prepare($sql);
+            $this->statement->execute($params);
+
+            return $this->statement->rowCount() > 0;
+        } catch (PDOException $e) {
+            logError("Safe update error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Створює таблицю налаштувань, якщо вона не існує
      * @return bool Результат створення таблиці
      */
@@ -423,8 +497,8 @@ class Database {
 
                 // Створення полів форми на основі вашої таблиці orders
                 $fields = [
-                    ['device_type', 'Тип пристрою', 'select', '{"options":["Телефон","Планшет","Ноутбук","ПК","МФУ","Телефон сенсорний","Телефон кнопковий","Інше"]}', 1, 10],
-                    ['service', 'Послуга', 'select', '{"options":["Діагностика","Ремонт екрану","Заміна батареї","Чистка від пилу","Встановлення ПЗ","Інше"]}', 1, 20],
+                    ['device_type', 'Тип пристрою', 'select', '{"options":["Телефон","Планшет","Ноутбук","ПК","МФУ","Телефон сенсорний","Телефон кнопковий"]}', 1, 10],
+                    ['service', 'Послуга', 'select', '{"options":["Діагностика","Ремонт екрану","Заміна батареї","Чистка від пилу","Встановлення ПО"]}', 1, 20],
                     ['details', 'Опис проблеми', 'textarea', null, 1, 30],
                     ['phone', 'Контактний телефон', 'tel', null, 1, 40],
                     ['address', 'Адреса', 'text', null, 0, 50],
@@ -436,8 +510,8 @@ class Database {
                 ];
 
                 $fieldSql = "INSERT INTO form_fields 
-                             (form_id, field_key, field_label, field_type, field_options, is_required, sort_order, is_active, created_at) 
-                             VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())";
+                              (form_id, field_key, field_label, field_type, field_options, is_required, sort_order, is_active, created_at) 
+                              VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())";
 
                 $stmt = $this->connection->prepare($fieldSql);
                 foreach ($fields as $field) {

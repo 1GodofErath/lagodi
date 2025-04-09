@@ -2624,3 +2624,501 @@ function terminateAllSessions() {
             showNotification('error', 'Помилка при завершенні сеансів');
         });
 }
+/**
+ * Показати активні сеанси у модальному вікні
+ */
+function showActiveSessions() {
+    // Запит активних сеансів
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'get_sessions': '1',
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Створення вмісту модального вікна
+                let tableRows = '';
+
+                data.sessions.forEach(session => {
+                    const isCurrentSession = session.is_current ? '<span class="badge bg-primary">Поточний</span>' : '';
+                    const lastActivity = new Date(session.last_activity);
+                    const formattedDate = lastActivity.toLocaleDateString() + ' ' + lastActivity.toLocaleTimeString();
+
+                    tableRows += `
+                <tr>
+                    <td>${session.browser} ${isCurrentSession}</td>
+                    <td>${session.ip_address}</td>
+                    <td>${formattedDate}</td>
+                    <td>
+                        ${!session.is_current ? `<button class="btn btn-danger btn-sm terminate-session" data-token="${session.session_token}">Завершити</button>` : ''}
+                    </td>
+                </tr>`;
+                });
+
+                const modalContent = `
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Пристрій</th>
+                                <th>IP-адреса</th>
+                                <th>Остання активність</th>
+                                <th>Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button id="terminate-all-sessions" class="btn btn-danger">Завершити всі інші сеанси</button>
+                </div>
+            `;
+
+                // Показати модальне вікно із сеансами
+                showModal('Активні сеанси', modalContent);
+
+                // Додати обробники подій для кнопок завершення сеансів
+                document.querySelectorAll('.terminate-session').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        terminateSession(this.getAttribute('data-token'));
+                    });
+                });
+
+                // Додати обробник події для кнопки завершення всіх сеансів
+                const terminateAllBtn = document.getElementById('terminate-all-sessions');
+                if (terminateAllBtn) {
+                    terminateAllBtn.addEventListener('click', terminateAllSessions);
+                }
+            } else {
+                showNotification('error', data.message || 'Не вдалося отримати дані про активні сеанси');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при отриманні даних про активні сеанси');
+        });
+}
+
+/**
+ * Завершення певного сеансу
+ * @param {string} sessionToken - Токен сеансу, який потрібно завершити
+ */
+function terminateSession(sessionToken) {
+    if (!confirm('Ви впевнені, що хочете завершити цей сеанс?')) return;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'terminate_session': '1',
+            'session_token': sessionToken,
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('success', 'Сеанс успішно завершено');
+                showActiveSessions(); // Оновити список сеансів
+            } else {
+                showNotification('error', data.message || 'Помилка при завершенні сеансу');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при завершенні сеансу');
+        });
+}
+
+/**
+ * Завершення всіх інших сеансів, крім поточного
+ */
+function terminateAllSessions() {
+    if (!confirm('Ви впевнені, що хочете завершити всі інші сеанси?')) return;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'terminate_all_sessions': '1',
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('success', 'Усі інші сеанси успішно завершено');
+                showActiveSessions(); // Оновити список сеансів
+            } else {
+                showNotification('error', data.message || 'Помилка при завершенні сеансів');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при завершенні сеансів');
+        });
+}
+
+/**
+ * Показати журнал активності користувача
+ */
+function showActivityLog() {
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'get_activity_log': '1',
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Створити вміст модального вікна
+                let tableRows = '';
+
+                data.logs.forEach(log => {
+                    const createdAt = new Date(log.created_at);
+                    const formattedDate = createdAt.toLocaleDateString() + ' ' + createdAt.toLocaleTimeString();
+
+                    // Форматувати дію для відображення
+                    let action = log.action.replace(/_/g, ' ');
+                    action = action.charAt(0).toUpperCase() + action.slice(1);
+
+                    // Форматувати деталі, якщо вони є
+                    let details = '';
+                    if (log.details) {
+                        try {
+                            const detailsObj = JSON.parse(log.details);
+                            details = Object.entries(detailsObj)
+                                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                                .join('<br>');
+                        } catch (e) {
+                            details = log.details;
+                        }
+                    }
+
+                    tableRows += `
+                <tr>
+                    <td>${formattedDate}</td>
+                    <td>${action}</td>
+                    <td>${log.entity_type || ''} ${log.entity_id ? `#${log.entity_id}` : ''}</td>
+                    <td>${details}</td>
+                    <td>${log.ip_address || ''}</td>
+                </tr>`;
+                });
+
+                const modalContent = `
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Дата і час</th>
+                                <th>Дія</th>
+                                <th>Об'єкт</th>
+                                <th>Деталі</th>
+                                <th>IP-адреса</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+                ${data.has_more ? '<div class="text-center mt-3"><button id="load-more-activity" class="btn btn-primary" data-page="' + (data.page + 1) + '">Завантажити більше</button></div>' : ''}
+            `;
+
+                // Показати модальне вікно з журналом активності
+                showModal('Журнал активності', modalContent, 'lg');
+
+                // Додати обробник події для кнопки завантаження додаткових записів
+                const loadMoreBtn = document.getElementById('load-more-activity');
+                if (loadMoreBtn && data.has_more) {
+                    loadMoreBtn.addEventListener('click', function() {
+                        loadMoreActivityLog(parseInt(this.getAttribute('data-page')), this);
+                    });
+                }
+            } else {
+                showNotification('error', data.message || 'Не вдалося отримати журнал активності');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при отриманні журналу активності');
+        });
+}
+
+/**
+ * Завантажити більше записів журналу активності
+ * @param {number} page - Номер сторінки для завантаження
+ * @param {HTMLElement} button - Елемент кнопки "Завантажити більше"
+ */
+function loadMoreActivityLog(page, button) {
+    // Показати стан завантаження
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Завантаження...';
+    button.disabled = true;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'get_activity_log': '1',
+            'page': page,
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Створити рядки для нових записів журналу
+                let tableRows = '';
+
+                data.logs.forEach(log => {
+                    const createdAt = new Date(log.created_at);
+                    const formattedDate = createdAt.toLocaleDateString() + ' ' + createdAt.toLocaleTimeString();
+
+                    // Форматувати дію для відображення
+                    let action = log.action.replace(/_/g, ' ');
+                    action = action.charAt(0).toUpperCase() + action.slice(1);
+
+                    // Форматувати деталі, якщо вони є
+                    let details = '';
+                    if (log.details) {
+                        try {
+                            const detailsObj = JSON.parse(log.details);
+                            details = Object.entries(detailsObj)
+                                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                                .join('<br>');
+                        } catch (e) {
+                            details = log.details;
+                        }
+                    }
+
+                    tableRows += `
+                <tr>
+                    <td>${formattedDate}</td>
+                    <td>${action}</td>
+                    <td>${log.entity_type || ''} ${log.entity_id ? `#${log.entity_id}` : ''}</td>
+                    <td>${details}</td>
+                    <td>${log.ip_address || ''}</td>
+                </tr>`;
+                });
+
+                // Додати нові рядки до таблиці
+                const tbody = document.querySelector('.modal-body table tbody');
+                tbody.innerHTML += tableRows;
+
+                // Оновити або видалити кнопку "Завантажити більше"
+                if (data.has_more) {
+                    button.innerHTML = 'Завантажити більше';
+                    button.disabled = false;
+                    button.setAttribute('data-page', data.page + 1);
+                } else {
+                    button.parentNode.remove();
+                }
+            } else {
+                showNotification('error', data.message || 'Не вдалося отримати додаткові записи журналу');
+                button.innerHTML = 'Завантажити більше';
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при отриманні додаткових записів журналу');
+            button.innerHTML = 'Завантажити більше';
+            button.disabled = false;
+        });
+}
+
+/**
+ * Функція для зміни теми сайту
+ * @param {string} theme - Назва теми (light, dark, blue, grey)
+ */
+function changeTheme(theme) {
+    // Відправити запит на зміну теми
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'change_theme': '1',
+            'theme': theme,
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Оновити атрибут data-theme на html елементі
+                document.documentElement.setAttribute('data-theme', theme);
+
+                // Оновити значення в конфігурації
+                config.theme = theme;
+
+                // Закрити модальне вікно вибору теми
+                closeModal('change-theme-modal');
+
+                showNotification('success', 'Тему оформлення успішно змінено');
+            } else {
+                showNotification('error', data.message || 'Помилка при зміні теми');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при зміні теми');
+        });
+}
+
+/**
+ * Функція для відображення модального вікна
+ * @param {string} title - Заголовок модального вікна
+ * @param {string} content - HTML-вміст модального вікна
+ * @param {string} size - Розмір модального вікна (sm, md, lg)
+ */
+function showModal(title, content, size = 'md') {
+    // Створити елементи модального вікна
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.id = 'dynamic-modal';
+
+    const sizeClass = size === 'lg' ? 'modal-lg' : (size === 'sm' ? 'modal-sm' : '');
+
+    modal.innerHTML = `
+        <div class="modal-dialog ${sizeClass}">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">${title}</h3>
+                    <button type="button" class="modal-close" onclick="closeModal('dynamic-modal')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    ${content}
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Додати модальне вікно до body
+    document.body.appendChild(modal);
+
+    // Додати обробник події для закриття модального вікна по кліку поза ним
+    modal.addEventListener('click', function(event) {
+        if (event.target === modal) {
+            closeModal('dynamic-modal');
+        }
+    });
+}
+
+/**
+ * Функція для закриття модального вікна
+ * @param {string} modalId - ID модального вікна
+ */
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        if (modalId === 'dynamic-modal') {
+            modal.remove();
+        } else {
+            modal.classList.remove('active');
+        }
+    }
+}
+
+/**
+ * Функція для відображення повідомлень користувачу
+ * @param {string} type - Тип повідомлення (success, error, info, warning)
+ * @param {string} message - Текст повідомлення
+ * @param {number} duration - Тривалість відображення в мілісекундах
+ */
+function showNotification(type, message, duration = 3000) {
+    const container = document.getElementById('notification-container') || createNotificationContainer();
+
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+
+    let icon = '';
+    switch (type) {
+        case 'success':
+            icon = '<i class="fas fa-check-circle"></i>';
+            break;
+        case 'error':
+            icon = '<i class="fas fa-exclamation-circle"></i>';
+            break;
+        case 'info':
+            icon = '<i class="fas fa-info-circle"></i>';
+            break;
+        case 'warning':
+            icon = '<i class="fas fa-exclamation-triangle"></i>';
+            break;
+    }
+
+    notification.innerHTML = `
+        ${icon}
+        <span class="notification-message">${message}</span>
+        <button class="notification-close">&times;</button>
+    `;
+
+    container.appendChild(notification);
+
+    // Додати клас для анімації появи
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+
+    // Додати обробник події для кнопки закриття
+    const closeBtn = notification.querySelector('.notification-close');
+    closeBtn.addEventListener('click', () => {
+        closeNotification(notification);
+    });
+
+    // Автоматичне закриття після вказаного часу
+    setTimeout(() => {
+        closeNotification(notification);
+    }, duration);
+}
+
+/**
+ * Створити контейнер для повідомлень, якщо він відсутній
+ * @returns {HTMLElement} Контейнер для повідомлень
+ */
+function createNotificationContainer() {
+    const container = document.createElement('div');
+    container.id = 'notification-container';
+    document.body.appendChild(container);
+    return container;
+}
+
+/**
+ * Закрити повідомлення з анімацією
+ * @param {HTMLElement} notification - Елемент повідомлення
+ */
+function closeNotification(notification) {
+    notification.classList.remove('show');
+    notification.classList.add('hide');
+
+    setTimeout(() => {
+        notification.remove();
+    }, 300); // час анімації зникнення
+}

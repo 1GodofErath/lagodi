@@ -98,19 +98,6 @@
                     </div>
                 </div>
 
-
-                <div class="setting-group">
-                    <h3 class="setting-title">Двофакторна автентифікація</h3>
-                    <div class="setting-value">
-                        <span>Вимкнено</span>
-                        <button id="enable-2fa-btn" class="btn btn-primary btn-sm" disabled>Увімкнути</button>
-                        <div class="form-hint">
-                            <i class="fas fa-info-circle"></i>
-                            Функція незабаром буде доступна
-                        </div>
-                    </div>
-                </div>
-
                 <div class="setting-group">
                     <h3 class="setting-title">Активні сеанси</h3>
                     <div class="setting-value">
@@ -282,7 +269,7 @@
             emailNotificationsCheckbox.addEventListener('change', function() {
                 const enabled = this.checked ? 1 : 0;
 
-                // Зберігаємо налаштування - fixed request format
+                // Зберігаємо налаштування
                 fetch('dashboard.php', {
                     method: 'POST',
                     headers: {
@@ -330,9 +317,7 @@
             });
         }
 
-// Replace lines 333-349 in settings_tab.php with:
-
-// Перегляд активних сеансів
+        // Перегляд активних сеансів
         const showSessionsBtn = document.getElementById('show-sessions-btn');
         if (showSessionsBtn) {
             showSessionsBtn.addEventListener('click', function() {
@@ -340,7 +325,7 @@
             });
         }
 
-// Перегляд журналу активності
+        // Перегляд журналу активності
         const showActivityBtn = document.getElementById('show-activity-btn');
         if (showActivityBtn) {
             showActivityBtn.addEventListener('click', function() {
