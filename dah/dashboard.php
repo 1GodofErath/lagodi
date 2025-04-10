@@ -1084,13 +1084,13 @@ function getDeliveryMethodName($method) {
                 <div class="user-dropdown">
                     <button class="user-btn" id="user-toggle">
                         <div class="user-avatar">
-                            <?php if ($userData['avatar']): ?>
-                                <img src="/uploads/avatars/<?= htmlspecialchars($userData['avatar']) ?>" alt="<?= htmlspecialchars($userData['display_name']) ?>">
+                            <?php if (!empty($userData['avatar'])): ?>
+                                <img src="/uploads/avatars/<?= htmlspecialchars($userData['avatar']) ?>" alt="<?= htmlspecialchars($userData['display_name'] ?? 'Користувач') ?>">
                             <?php else: ?>
                                 <i class="fas fa-user"></i>
                             <?php endif; ?>
                         </div>
-                        <span class="user-name"><?= htmlspecialchars($userData['display_name']) ?></span>
+                        <span class="user-name"><?= htmlspecialchars($userData['display_name'] ?? 'Користувач') ?></span>
                         <i class="fas fa-chevron-down"></i>
                     </button>
 
@@ -1507,7 +1507,7 @@ function getDeliveryMethodName($method) {
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="/../jawa/dahj/lagodi-ui.js"></script>
 
-<script>
+<script> 0
     // Глобальні змінні
     const config = {
         csrfToken: '<?= $_SESSION['csrf_token'] ?>',
