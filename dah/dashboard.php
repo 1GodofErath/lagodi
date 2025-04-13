@@ -181,7 +181,7 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
 
         // Позначаємо сповіщення для цього замовлення як прочитані
         $db->query(
-            "UPDATE notifications SET is_read = 1, updated_at = NOW() WHERE user_id = ? AND order_id = ?",
+            "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND order_id = ?",
             [$userId, $orderId]
         );
 
@@ -337,6 +337,7 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
         exit;
     }
     // Додавання коментаря
+    // Додавання коментаря
     if (isset($_POST['add_comment']) && isset($_POST['order_id']) && isset($_POST['comment'])) {
         $orderId = (int)$_POST['order_id'];
         $commentText = trim($_POST['comment']);
@@ -345,6 +346,26 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
             echo json_encode([
                 'success' => false,
                 'message' => 'Коментар не може бути порожнім'
+            ]);
+            exit;
+        }
+
+        // Отримаємо дані про замовлення, щоб перевірити статус
+        $orderData = $order->getById($orderId);
+
+        if (!$orderData || $orderData['user_id'] != $userId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Замовлення не знайдено або у вас немає прав для його перегляду'
+            ]);
+            exit;
+        }
+
+        // Перевірка, чи можна додавати коментарі до цього замовлення
+        if (!$order->canAddComments($orderData['status'])) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Неможливо додати коментар до завершеного або скасованого замовлення'
             ]);
             exit;
         }

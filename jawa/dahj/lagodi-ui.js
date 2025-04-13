@@ -1833,7 +1833,7 @@ function calculatePasswordStrength(password) {
 /**
  * Показує сповіщення користувачу
  */
-window.showNotification = function(type, message, duration = 3000) {
+function showNotification(type, message, duration = 3000) {
     // Створюємо контейнер для сповіщень, якщо його ще немає
     let container = document.getElementById('notification-container');
     if (!container) {
@@ -1883,7 +1883,7 @@ window.showNotification = function(type, message, duration = 3000) {
             }, duration);
         }
     }, 10);
-};
+}
 
 /**
  * Закриває сповіщення
@@ -2299,480 +2299,6 @@ function getStatusClass(status) {
 
     return 'status-default';
 }
-/**
- * Show user activity log in a modal window
- */
-function showActivityLog() {
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'get_activity_log': '1',
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Create modal content
-                let tableRows = '';
-
-                data.logs.forEach(log => {
-                    const createdAt = new Date(log.created_at);
-                    const formattedDate = createdAt.toLocaleDateString() + ' ' + createdAt.toLocaleTimeString();
-
-                    // Format action for display
-                    let action = log.action.replace(/_/g, ' ');
-                    action = action.charAt(0).toUpperCase() + action.slice(1);
-
-                    // Format details if available
-                    let details = '';
-                    if (log.details) {
-                        try {
-                            const detailsObj = JSON.parse(log.details);
-                            details = Object.entries(detailsObj)
-                                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
-                                .join('<br>');
-                        } catch (e) {
-                            details = log.details;
-                        }
-                    }
-
-                    tableRows += `
-                <tr>
-                    <td>${formattedDate}</td>
-                    <td>${action}</td>
-                    <td>${log.entity_type || ''} ${log.entity_id ? `#${log.entity_id}` : ''}</td>
-                    <td>${details}</td>
-                    <td>${log.ip_address || ''}</td>
-                </tr>`;
-                });
-
-                const modalContent = `
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Дата і час</th>
-                                <th>Дія</th>
-                                <th>Об'єкт</th>
-                                <th>Деталі</th>
-                                <th>IP-адреса</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tableRows}
-                        </tbody>
-                    </table>
-                </div>
-                ${data.has_more ? '<div class="text-center mt-3"><button id="load-more-activity" class="btn btn-primary">Завантажити більше</button></div>' : ''}
-            `;
-
-                // Show modal with activity log
-                showModal('Журнал активності', modalContent, 'lg');
-
-                // Add event listener for loading more activities
-                const loadMoreBtn = document.getElementById('load-more-activity');
-                if (loadMoreBtn && data.has_more) {
-                    loadMoreBtn.addEventListener('click', function() {
-                        loadMoreActivityLog(data.page + 1, this);
-                    });
-                }
-            } else {
-                showNotification('error', data.message || 'Не вдалося отримати журнал активності');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при отриманні журналу активності');
-        });
-}
-
-/**
- * Load more activity log entries
- * @param {number} page - Page number to load
- * @param {HTMLElement} button - Load more button element
- */
-function loadMoreActivityLog(page, button) {
-    // Show loading state
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Завантаження...';
-    button.disabled = true;
-
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'get_activity_log': '1',
-            'page': page,
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Create rows for new log entries
-                let tableRows = '';
-
-                data.logs.forEach(log => {
-                    const createdAt = new Date(log.created_at);
-                    const formattedDate = createdAt.toLocaleDateString() + ' ' + createdAt.toLocaleTimeString();
-
-                    // Format action for display
-                    let action = log.action.replace(/_/g, ' ');
-                    action = action.charAt(0).toUpperCase() + action.slice(1);
-
-                    // Format details if available
-                    let details = '';
-                    if (log.details) {
-                        try {
-                            const detailsObj = JSON.parse(log.details);
-                            details = Object.entries(detailsObj)
-                                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
-                                .join('<br>');
-                        } catch (e) {
-                            details = log.details;
-                        }
-                    }
-
-                    tableRows += `
-                <tr>
-                    <td>${formattedDate}</td>
-                    <td>${action}</td>
-                    <td>${log.entity_type || ''} ${log.entity_id ? `#${log.entity_id}` : ''}</td>
-                    <td>${details}</td>
-                    <td>${log.ip_address || ''}</td>
-                </tr>`;
-                });
-
-                // Add new rows to the table
-                const tbody = document.querySelector('.modal-body table tbody');
-                tbody.innerHTML += tableRows;
-
-                // Update or remove the load more button
-                if (data.has_more) {
-                    button.innerHTML = 'Завантажити більше';
-                    button.disabled = false;
-                    button.setAttribute('data-page', data.page + 1);
-                } else {
-                    button.parentNode.remove();
-                }
-            } else {
-                showNotification('error', data.message || 'Не вдалося отримати додаткові записи журналу');
-                button.innerHTML = 'Завантажити більше';
-                button.disabled = false;
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при отриманні додаткових записів журналу');
-            button.innerHTML = 'Завантажити більше';
-            button.disabled = false;
-        });
-}
-/**
- * Show active sessions in a modal window
- */
-function showActiveSessions() {
-    // Request active sessions data
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'get_sessions': '1',
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Create modal content
-                let tableRows = '';
-
-                data.sessions.forEach(session => {
-                    const isCurrentSession = session.is_current ? '<span class="badge bg-primary">Поточний</span>' : '';
-                    const lastActivity = new Date(session.last_activity);
-                    const formattedDate = lastActivity.toLocaleDateString() + ' ' + lastActivity.toLocaleTimeString();
-
-                    tableRows += `
-                <tr>
-                    <td>${session.browser} ${isCurrentSession}</td>
-                    <td>${session.ip_address}</td>
-                    <td>${formattedDate}</td>
-                    <td>
-                        ${!session.is_current ? `<button class="btn btn-danger btn-sm terminate-session" data-token="${session.session_token}">Завершити</button>` : ''}
-                    </td>
-                </tr>`;
-                });
-
-                const modalContent = `
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Пристрій</th>
-                                <th>IP-адреса</th>
-                                <th>Остання активність</th>
-                                <th>Дії</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tableRows}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="modal-footer">
-                    <button id="terminate-all-sessions" class="btn btn-danger">Завершити всі інші сеанси</button>
-                </div>
-            `;
-
-                // Show modal with sessions
-                showModal('Активні сеанси', modalContent);
-
-                // Add event listeners for session termination
-                document.querySelectorAll('.terminate-session').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        terminateSession(this.getAttribute('data-token'));
-                    });
-                });
-
-                // Add event listener for terminating all sessions
-                const terminateAllBtn = document.getElementById('terminate-all-sessions');
-                if (terminateAllBtn) {
-                    terminateAllBtn.addEventListener('click', terminateAllSessions);
-                }
-            } else {
-                showNotification('error', data.message || 'Не вдалося отримати дані про активні сеанси');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при отриманні даних про активні сеанси');
-        });
-}
-
-/**
- * Terminate a specific session
- * @param {string} sessionToken - Token of the session to terminate
- */
-function terminateSession(sessionToken) {
-    if (!confirm('Ви впевнені, що хочете завершити цей сеанс?')) return;
-
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'terminate_session': '1',
-            'session_token': sessionToken,
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Сеанс успішно завершено');
-                showActiveSessions(); // Refresh the sessions list
-            } else {
-                showNotification('error', data.message || 'Помилка при завершенні сеансу');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при завершенні сеансу');
-        });
-}
-
-/**
- * Terminate all other sessions except the current one
- */
-function terminateAllSessions() {
-    if (!confirm('Ви впевнені, що хочете завершити всі інші сеанси?')) return;
-
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'terminate_all_sessions': '1',
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Усі інші сеанси успішно завершено');
-                showActiveSessions(); // Refresh the sessions list
-            } else {
-                showNotification('error', data.message || 'Помилка при завершенні сеансів');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при завершенні сеансів');
-        });
-}
-/**
- * Показати активні сеанси у модальному вікні
- */
-function showActiveSessions() {
-    // Запит активних сеансів
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'get_sessions': '1',
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Створення вмісту модального вікна
-                let tableRows = '';
-
-                data.sessions.forEach(session => {
-                    const isCurrentSession = session.is_current ? '<span class="badge bg-primary">Поточний</span>' : '';
-                    const lastActivity = new Date(session.last_activity);
-                    const formattedDate = lastActivity.toLocaleDateString() + ' ' + lastActivity.toLocaleTimeString();
-
-                    tableRows += `
-                <tr>
-                    <td>${session.browser} ${isCurrentSession}</td>
-                    <td>${session.ip_address}</td>
-                    <td>${formattedDate}</td>
-                    <td>
-                        ${!session.is_current ? `<button class="btn btn-danger btn-sm terminate-session" data-token="${session.session_token}">Завершити</button>` : ''}
-                    </td>
-                </tr>`;
-                });
-
-                const modalContent = `
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Пристрій</th>
-                                <th>IP-адреса</th>
-                                <th>Остання активність</th>
-                                <th>Дії</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tableRows}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="modal-footer">
-                    <button id="terminate-all-sessions" class="btn btn-danger">Завершити всі інші сеанси</button>
-                </div>
-            `;
-
-                // Показати модальне вікно із сеансами
-                showModal('Активні сеанси', modalContent);
-
-                // Додати обробники подій для кнопок завершення сеансів
-                document.querySelectorAll('.terminate-session').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        terminateSession(this.getAttribute('data-token'));
-                    });
-                });
-
-                // Додати обробник події для кнопки завершення всіх сеансів
-                const terminateAllBtn = document.getElementById('terminate-all-sessions');
-                if (terminateAllBtn) {
-                    terminateAllBtn.addEventListener('click', terminateAllSessions);
-                }
-            } else {
-                showNotification('error', data.message || 'Не вдалося отримати дані про активні сеанси');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при отриманні даних про активні сеанси');
-        });
-}
-
-/**
- * Завершення певного сеансу
- * @param {string} sessionToken - Токен сеансу, який потрібно завершити
- */
-function terminateSession(sessionToken) {
-    if (!confirm('Ви впевнені, що хочете завершити цей сеанс?')) return;
-
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'terminate_session': '1',
-            'session_token': sessionToken,
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Сеанс успішно завершено');
-                showActiveSessions(); // Оновити список сеансів
-            } else {
-                showNotification('error', data.message || 'Помилка при завершенні сеансу');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при завершенні сеансу');
-        });
-}
-
-/**
- * Завершення всіх інших сеансів, крім поточного
- */
-function terminateAllSessions() {
-    if (!confirm('Ви впевнені, що хочете завершити всі інші сеанси?')) return;
-
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'terminate_all_sessions': '1',
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Усі інші сеанси успішно завершено');
-                showActiveSessions(); // Оновити список сеансів
-            } else {
-                showNotification('error', data.message || 'Помилка при завершенні сеансів');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при завершенні сеансів');
-        });
-}
 
 /**
  * Показати журнал активності користувача
@@ -2952,11 +2478,10 @@ function loadMoreActivityLog(page, button) {
 }
 
 /**
- * Функція для зміни теми сайту
- * @param {string} theme - Назва теми (light, dark, blue, grey)
+ * Показати активні сеанси у модальному вікні
  */
-function changeTheme(theme) {
-    // Відправити запит на зміну теми
+function showActiveSessions() {
+    // Запит активних сеансів
     fetch('dashboard.php', {
         method: 'POST',
         headers: {
@@ -2964,31 +2489,141 @@ function changeTheme(theme) {
             'X-Requested-With': 'XMLHttpRequest'
         },
         body: new URLSearchParams({
-            'change_theme': '1',
-            'theme': theme,
+            'get_sessions': '1',
             'csrf_token': config.csrfToken
         })
     })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Оновити атрибут data-theme на html елементі
-                document.documentElement.setAttribute('data-theme', theme);
+                // Створення вмісту модального вікна
+                let tableRows = '';
 
-                // Оновити значення в конфігурації
-                config.theme = theme;
+                data.sessions.forEach(session => {
+                    const isCurrentSession = session.is_current ? '<span class="badge bg-primary">Поточний</span>' : '';
+                    const lastActivity = new Date(session.last_activity);
+                    const formattedDate = lastActivity.toLocaleDateString() + ' ' + lastActivity.toLocaleTimeString();
 
-                // Закрити модальне вікно вибору теми
-                closeModal('change-theme-modal');
+                    tableRows += `
+                <tr>
+                    <td>${session.browser} ${isCurrentSession}</td>
+                    <td>${session.ip_address}</td>
+                    <td>${formattedDate}</td>
+                    <td>
+                        ${!session.is_current ? `<button class="btn btn-danger btn-sm terminate-session" data-token="${session.session_token}">Завершити</button>` : ''}
+                    </td>
+                </tr>`;
+                });
 
-                showNotification('success', 'Тему оформлення успішно змінено');
+                const modalContent = `
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Пристрій</th>
+                                <th>IP-адреса</th>
+                                <th>Остання активність</th>
+                                <th>Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button id="terminate-all-sessions" class="btn btn-danger">Завершити всі інші сеанси</button>
+                </div>
+            `;
+
+                // Показати модальне вікно із сеансами
+                showModal('Активні сеанси', modalContent);
+
+                // Додати обробники подій для кнопок завершення сеансів
+                document.querySelectorAll('.terminate-session').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        terminateSession(this.getAttribute('data-token'));
+                    });
+                });
+
+                // Додати обробник події для кнопки завершення всіх сеансів
+                const terminateAllBtn = document.getElementById('terminate-all-sessions');
+                if (terminateAllBtn) {
+                    terminateAllBtn.addEventListener('click', terminateAllSessions);
+                }
             } else {
-                showNotification('error', data.message || 'Помилка при зміні теми');
+                showNotification('error', data.message || 'Не вдалося отримати дані про активні сеанси');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            showNotification('error', 'Помилка при зміні теми');
+            showNotification('error', 'Помилка при отриманні даних про активні сеанси');
+        });
+}
+
+/**
+ * Завершення певного сеансу
+ * @param {string} sessionToken - Токен сеансу, який потрібно завершити
+ */
+function terminateSession(sessionToken) {
+    if (!confirm('Ви впевнені, що хочете завершити цей сеанс?')) return;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'terminate_session': '1',
+            'session_token': sessionToken,
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('success', 'Сеанс успішно завершено');
+                showActiveSessions(); // Оновити список сеансів
+            } else {
+                showNotification('error', data.message || 'Помилка при завершенні сеансу');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при завершенні сеансу');
+        });
+}
+
+/**
+ * Завершення всіх інших сеансів, крім поточного
+ */
+function terminateAllSessions() {
+    if (!confirm('Ви впевнені, що хочете завершити всі інші сеанси?')) return;
+
+    fetch('dashboard.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            'terminate_all_sessions': '1',
+            'csrf_token': config.csrfToken
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('success', 'Усі інші сеанси успішно завершено');
+                showActiveSessions(); // Оновити список сеансів
+            } else {
+                showNotification('error', data.message || 'Помилка при завершенні сеансів');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Помилка при завершенні сеансів');
         });
 }
 
@@ -3032,761 +2667,9 @@ function showModal(title, content, size = 'md') {
 }
 
 /**
- * Функція для закриття модального вікна
- * @param {string} modalId - ID модального вікна
+ * Завантаження даних замовлення для редагування
+ * @param {string} orderId - ID замовлення
  */
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        if (modalId === 'dynamic-modal') {
-            modal.remove();
-        } else {
-            modal.classList.remove('active');
-        }
-    }
-}
-
-/**
- * Функція для відображення повідомлень користувачу
- * @param {string} type - Тип повідомлення (success, error, info, warning)
- * @param {string} message - Текст повідомлення
- * @param {number} duration - Тривалість відображення в мілісекундах
- */
-function showNotification(type, message, duration = 3000) {
-    const container = document.getElementById('notification-container') || createNotificationContainer();
-
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-
-    let icon = '';
-    switch (type) {
-        case 'success':
-            icon = '<i class="fas fa-check-circle"></i>';
-            break;
-        case 'error':
-            icon = '<i class="fas fa-exclamation-circle"></i>';
-            break;
-        case 'info':
-            icon = '<i class="fas fa-info-circle"></i>';
-            break;
-        case 'warning':
-            icon = '<i class="fas fa-exclamation-triangle"></i>';
-            break;
-    }
-
-    notification.innerHTML = `
-        ${icon}
-        <span class="notification-message">${message}</span>
-        <button class="notification-close">&times;</button>
-    `;
-
-    container.appendChild(notification);
-
-    // Додати клас для анімації появи
-    setTimeout(() => {
-        notification.classList.add('show');
-    }, 10);
-
-    // Додати обробник події для кнопки закриття
-    const closeBtn = notification.querySelector('.notification-close');
-    closeBtn.addEventListener('click', () => {
-        closeNotification(notification);
-    });
-
-    // Автоматичне закриття після вказаного часу
-    setTimeout(() => {
-        closeNotification(notification);
-    }, duration);
-}
-
-/**
- * Створити контейнер для повідомлень, якщо він відсутній
- * @returns {HTMLElement} Контейнер для повідомлень
- */
-function createNotificationContainer() {
-    const container = document.createElement('div');
-    container.id = 'notification-container';
-    document.body.appendChild(container);
-    return container;
-}
-
-/**
- * Закрити повідомлення з анімацією
- * @param {HTMLElement} notification - Елемент повідомлення
- */
-function closeNotification(notification) {
-    notification.classList.remove('show');
-    notification.classList.add('hide');
-
-    setTimeout(() => {
-        notification.remove();
-    }, 300); // час анімації зникнення
-}
-// Додайте цей код у ваш JavaScript файл, який обробляє отримання даних замовлення
-
-function loadOrderDetails(orderId) {
-    // Показуємо спіннер завантаження
-    $('.loading-spinner').show();
-
-    fetch(`dashboard.php?get_order_details=${orderId}`, {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const order = data.order;
-
-                // Заповнюємо інформацію про замовлення
-                $('#view-order-id').text(order.id);
-
-                // Заповнюємо вкладку з файлами
-                let filesContent = '';
-                if (order.files && order.files.length > 0) {
-                    filesContent = '<div class="files-grid">';
-                    order.files.forEach(file => {
-                        let filePreview = '';
-                        if (file.file_type === 'image' || file.file_mime.startsWith('image/')) {
-                            filePreview = `<img src="${file.file_path}" alt="${file.original_name}">`;
-                        } else {
-                            filePreview = `<i class="fas fa-file"></i>`;
-                        }
-
-                        filesContent += `
-                        <div class="file-item" data-id="${file.id}">
-                            <div class="file-thumbnail">
-                                ${filePreview}
-                            </div>
-                            <div class="file-info">
-                                <div class="file-name">${file.original_name}</div>
-                                <div class="file-size">${formatFileSize(file.file_size)}</div>
-                            </div>
-                            <div class="file-actions">
-                                <a href="${file.file_path}" download="${file.original_name}" class="btn btn-sm btn-primary">
-                                    <i class="fas fa-download"></i> Завантажити
-                                </a>
-                            </div>
-                        </div>
-                    `;
-                    });
-                    filesContent += '</div>';
-                } else {
-                    filesContent = `
-                    <div class="empty-state">
-                        <i class="fas fa-file-upload"></i>
-                        <p>Немає прикріплених файлів</p>
-                    </div>
-                `;
-                }
-                $('#order-files-content').html(filesContent);
-
-                // Коли редагуємо замовлення, додаємо файли в форму редагування
-                if (order.files && order.files.length > 0) {
-                    let editFilesContent = '';
-
-                    order.files.forEach(file => {
-                        let filePreview = '';
-                        if (file.file_type === 'image' || file.file_mime.startsWith('image/')) {
-                            filePreview = `<img src="${file.file_path}" alt="${file.original_name}">`;
-                        } else {
-                            filePreview = `<i class="fas fa-file"></i>`;
-                        }
-
-                        editFilesContent += `
-                        <div class="file-item" data-id="${file.id}">
-                            <div class="file-thumbnail">
-                                ${filePreview}
-                            </div>
-                            <div class="file-info">
-                                <div class="file-name">${file.original_name}</div>
-                                <div class="file-size">${formatFileSize(file.file_size)}</div>
-                            </div>
-                            <div class="file-actions">
-                                <div class="form-check">
-                                    <input type="checkbox" class="form-check-input" id="remove-file-${file.id}" name="remove_files[]" value="${file.id}">
-                                    <label class="form-check-label" for="remove-file-${file.id}">Видалити</label>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    });
-
-                    $('#edit-files-list').html(editFilesContent);
-                } else {
-                    $('#edit-files-list').html(`
-                    <p>Немає прикріплених файлів</p>
-                `);
-                }
-
-                // Приховуємо спіннер завантаження
-                $('.loading-spinner').hide();
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            $('.loading-spinner').hide();
-        });
-}
-
-function formatFileSize(bytes) {
-    if (bytes === 0 || !bytes) return '0 Б';
-    const k = 1024;
-    const sizes = ['Б', 'КБ', 'МБ', 'ГБ'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-// Додайте цей код для відображення коментарів та історії замовлення
-
-function loadOrderComments(orderId) {
-    // Отримуємо коментарі та історію з даних замовлення
-    fetch(`dashboard.php?get_order_details=${orderId}`, {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const order = data.order;
-
-                // Заповнюємо вкладку з коментарями
-                let commentsContent = '';
-                if (order.comments && order.comments.length > 0) {
-                    commentsContent = '<div class="comments-list">';
-                    order.comments.forEach(comment => {
-                        const isAdmin = comment.is_admin == 1 || comment.author_role === 'admin';
-                        const commentDate = new Date(comment.created_at);
-                        const formattedDate = commentDate.toLocaleDateString() + ' ' + commentDate.toLocaleTimeString();
-
-                        commentsContent += `
-                        <div class="comment${isAdmin ? ' admin-comment' : ''}" data-id="${comment.id}">
-                            <div class="comment-header">
-                                <div class="comment-author">${comment.author_display_name || comment.author_name || 'Користувач'}</div>
-                                <div class="comment-date">${formattedDate}</div>
-                            </div>
-                            <div class="comment-text">${comment.comment}</div>
-                            ${!isAdmin && order.status !== 'Завершено' && order.status !== 'Скасовано' ?
-                            `<div class="comment-actions">
-                                    <button class="btn btn-danger btn-sm delete-comment-btn" data-id="${comment.id}">
-                                        <i class="fas fa-trash"></i> Видалити
-                                    </button>
-                                </div>` : ''
-                        }
-                        </div>
-                    `;
-                    });
-                    commentsContent += '</div>';
-                } else {
-                    commentsContent = `
-                    <div class="empty-state">
-                        <i class="fas fa-comments"></i>
-                        <p>Немає коментарів</p>
-                    </div>
-                `;
-                }
-                $('#order-comments-content').html(commentsContent);
-
-                // Заповнюємо вкладку з історією змін
-                let historyContent = '';
-                if (order.status_history && order.status_history.length > 0) {
-                    historyContent = '<div class="history-timeline">';
-                    order.status_history.forEach(item => {
-                        const historyDate = new Date(item.changed_at);
-                        const formattedDate = historyDate.toLocaleDateString() + ' ' + historyDate.toLocaleTimeString();
-
-                        historyContent += `
-                        <div class="history-item">
-                            <div class="history-date">${formattedDate}</div>
-                            <div class="history-content">
-                                <div class="history-title">Змінено статус замовлення</div>
-                                <div class="history-details">
-                                    <span class="status-badge ${getStatusClass(item.previous_status)}">${item.previous_status}</span>
-                                    <i class="fas fa-long-arrow-alt-right"></i>
-                                    <span class="status-badge ${getStatusClass(item.new_status)}">${item.new_status}</span>
-                                </div>
-                                ${item.comment ? `<div class="history-comment">${item.comment}</div>` : ''}
-                                <div class="history-author">
-                                    <i class="fas fa-user"></i> ${item.user_name || 'Система'}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    });
-                    historyContent += '</div>';
-                } else {
-                    historyContent = `
-                    <div class="empty-state">
-                        <i class="fas fa-history"></i>
-                        <p>Історія змін відсутня</p>
-                    </div>
-                `;
-                }
-                $('#order-history-content').html(historyContent);
-
-                // Оновлюємо статус кнопок відповідно до статусу замовлення
-                updateOrderActionButtons(order);
-
-                // Приховуємо спіннер завантаження
-                $('.loading-spinner').hide();
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            $('.loading-spinner').hide();
-        });
-}
-
-// Функція для оновлення кнопок дій відповідно до статусу замовлення
-function updateOrderActionButtons(order) {
-    const $editBtn = $('#edit-order-btn');
-    const $cancelBtn = $('#cancel-order-btn');
-    const $commentForm = $('.comment-form');
-
-    // Приховуємо всі кнопки спочатку
-    $editBtn.hide();
-    $cancelBtn.hide();
-
-    // Перевіряємо, чи можна редагувати замовлення
-    if (['Новий', 'Очікування', 'Підтверджено'].includes(order.status)) {
-        $editBtn.show();
-    }
-
-    // Перевіряємо, чи можна скасувати замовлення
-    if (['Новий', 'Очікування', 'Підтверджено', 'В роботі'].includes(order.status)) {
-        $cancelBtn.show();
-    }
-
-    // Перевіряємо, чи можна додавати коментарі
-    if (['Завершено', 'Скасовано'].includes(order.status)) {
-        $commentForm.hide();
-    } else {
-        $commentForm.show();
-    }
-}
-
-// Функція для отримання класу статусу
-function getStatusClass(status) {
-    if (!status) return 'status-default';
-
-    status = status.toLowerCase();
-
-    if (status.includes('нов')) {
-        return 'status-new';
-    } else if (status.includes('робот') || status.includes('в роботі')) {
-        return 'status-in-progress';
-    } else if (status.includes('очіку')) {
-        return 'status-pending';
-    } else if (status.includes('заверш') || status.includes('готов') || status.includes('викон')) {
-        return 'status-completed';
-    } else if (status.includes('скасова') || status.includes('відмін')) {
-        return 'status-cancelled';
-    }
-
-    return 'status-default';
-}
-// Додаємо глобальні слухачі подій, коли DOM повністю завантажений
-$(document).ready(function() {
-    // Обробка кліку по кнопці перегляду замовлення
-    $(document).on('click', '.view-order-btn', function() {
-        const orderId = $(this).data('id');
-        openViewOrderModal(orderId);
-    });
-
-    // Обробка кліку по кнопці редагування замовлення
-    $(document).on('click', '.edit-order-btn, #edit-order-btn', function() {
-        const orderId = $(this).data('id') || $('#view-order-id').text();
-        openEditOrderModal(orderId);
-    });
-
-    // Обробка кліку по кнопці скасування замовлення
-    $(document).on('click', '.cancel-order-btn, #cancel-order-btn', function() {
-        const orderId = $(this).data('id') || $('#view-order-id').text();
-        openCancelOrderModal(orderId);
-    });
-
-    // Обробка кліку по вкладках модального вікна замовлення
-    $('#order-tabs .tab-btn').click(function() {
-        const tabId = $(this).data('tab');
-
-        // Переключаємо активну вкладку
-        $('#order-tabs .tab-btn').removeClass('active');
-        $(this).addClass('active');
-
-        // Показуємо відповідний контент
-        $('#order-tabs .tab-pane').removeClass('active');
-        $(`#tab-${tabId}`).addClass('active');
-    });
-
-    // Обробка відправлення коментаря
-    $('#send-comment').click(function() {
-        const orderId = $('#view-order-id').text();
-        const commentText = $('#comment-text').val().trim();
-
-        if (!commentText) {
-            showNotification('error', 'Коментар не може бути порожнім');
-            return;
-        }
-
-        sendComment(orderId, commentText);
-    });
-
-    // Обробка видалення коментаря
-    $(document).on('click', '.delete-comment-btn', function() {
-        const commentId = $(this).data('id');
-        if (confirm('Ви впевнені, що хочете видалити цей коментар?')) {
-            deleteComment(commentId);
-        }
-    });
-
-    // Обробка збереження змін замовлення
-    $('#save-order-btn').click(function() {
-        saveOrder();
-    });
-
-    // Обробка підтвердження скасування замовлення
-    $('#confirm-cancel-btn').click(function() {
-        confirmCancelOrder();
-    });
-
-    // Закриття модального вікна за кнопкою "Закрити" або "Скасувати"
-    $(document).on('click', '[data-dismiss="modal"]', function() {
-        const modalId = $(this).closest('.modal').attr('id');
-        closeModal(modalId);
-    });
-});
-
-// Функція відкриття модального вікна перегляду замовлення
-function openViewOrderModal(orderId) {
-    // Показуємо модальне вікно
-    $('#view-order-modal').addClass('active');
-    $('#view-order-id').text(orderId);
-
-    // Скидаємо вміст вкладок
-    $('#order-info-content, #order-files-content, #order-comments-content, #order-history-content').empty();
-    $('.loading-spinner').show();
-
-    // Переходимо на першу вкладку
-    $('#order-tabs .tab-btn').removeClass('active');
-    $('#order-tabs .tab-btn[data-tab="info"]').addClass('active');
-    $('#order-tabs .tab-pane').removeClass('active');
-    $('#tab-info').addClass('active');
-
-    // Завантажуємо дані замовлення
-    loadOrderDetails(orderId);
-    loadOrderComments(orderId);
-
-    // Очищаємо поле коментаря
-    $('#comment-text').val('');
-}
-
-// Функція відкриття модального вікна редагування замовлення
-function openEditOrderModal(orderId) {
-    // Показуємо модальне вікно
-    $('#edit-order-modal').addClass('active');
-    $('#edit-order-id').text(orderId);
-    $('#edit-order-id-input').val(orderId);
-
-    // Завантажуємо дані замовлення для редагування
-    loadOrderForEditing(orderId);
-
-    // Закриваємо вікно перегляду, якщо воно відкрите
-    closeModal('view-order-modal');
-}
-
-// Функція відкриття модального вікна скасування замовлення
-function openCancelOrderModal(orderId) {
-    // Показуємо модальне вікно
-    $('#cancel-order-modal').addClass('active');
-    $('#cancel-order-id').text(orderId);
-
-    // Очищаємо поле причини скасування
-    $('#cancel-reason').val('');
-
-    // Закриваємо вікно перегляду, якщо воно відкрите
-    closeModal('view-order-modal');
-}
-
-// Функція закриття модального вікна
-function closeModal(modalId) {
-    $(`#${modalId}`).removeClass('active');
-}
-
-// Функція завантаження даних замовлення
-function loadOrderDetails(orderId) {
-    // Показуємо спіннер завантаження
-    $('.loading-spinner').show();
-
-    fetch(`dashboard.php?get_order_details=${orderId}`, {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const order = data.order;
-
-                // Заповнюємо інформацію про замовлення
-                let infoContent = `
-                <div class="order-info">
-                    <div class="order-header">
-                        <div class="order-date">Створено: ${formatDateTime(order.created_at)}</div>
-                        <div class="order-status">
-                            <span class="status-badge ${getStatusClass(order.status)}">${order.status}</span>
-                        </div>
-                    </div>
-                    
-                    <div class="order-details-grid">
-                        <div class="detail-group">
-                            <span class="detail-label">Тип пристрою</span>
-                            <span class="detail-value">${order.device_type}</span>
-                        </div>
-                        
-                        <div class="detail-group">
-                            <span class="detail-label">Послуга</span>
-                            <span class="detail-value">${order.service}</span>
-                        </div>
-                        
-                        <div class="detail-group full-width">
-                            <span class="detail-label">Опис проблеми</span>
-                            <span class="detail-value">${order.details}</span>
-                        </div>
-                        
-                        <div class="detail-group">
-                            <span class="detail-label">Телефон</span>
-                            <span class="detail-value">${order.phone}</span>
-                        </div>
-                        
-                        ${order.address ? `
-                        <div class="detail-group">
-                            <span class="detail-label">Адреса</span>
-                            <span class="detail-value">${order.address}</span>
-                        </div>
-                        ` : ''}
-                        
-                        ${order.delivery_method ? `
-                        <div class="detail-group">
-                            <span class="detail-label">Спосіб доставки</span>
-                            <span class="detail-value">${getDeliveryMethodName(order.delivery_method)}</span>
-                        </div>
-                        ` : ''}
-                        
-                        ${order.estimated_completion_date ? `
-                        <div class="detail-group">
-                            <span class="detail-label">Очікувана дата завершення</span>
-                            <span class="detail-value">${formatDate(order.estimated_completion_date)}</span>
-                        </div>
-                        ` : ''}
-                        
-                        ${order.price ? `
-                        <div class="detail-group">
-                            <span class="detail-label">Вартість</span>
-                            <span class="detail-value">${formatPrice(order.price)}</span>
-                        </div>
-                        ` : ''}
-                        
-                        ${order.user_comment ? `
-                        <div class="detail-group full-width">
-                            <span class="detail-label">Коментар клієнта</span>
-                            <span class="detail-value">${order.user_comment}</span>
-                        </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-
-                $('#order-info-content').html(infoContent);
-
-                // Заповнюємо вкладку з файлами
-                let filesContent = '';
-                if (order.files && order.files.length > 0) {
-                    filesContent = '<div class="files-grid">';
-                    order.files.forEach(file => {
-                        let filePreview = '';
-                        if (file.file_type === 'image' || (file.file_mime && file.file_mime.startsWith('image/'))) {
-                            filePreview = `<img src="${file.file_path}" alt="${file.original_name}">`;
-                        } else {
-                            filePreview = `<i class="fas fa-file"></i>`;
-                        }
-
-                        filesContent += `
-                        <div class="file-item" data-id="${file.id}">
-                            <div class="file-thumbnail">
-                                ${filePreview}
-                            </div>
-                            <div class="file-info">
-                                <div class="file-name">${file.original_name}</div>
-                                <div class="file-size">${formatFileSize(file.file_size)}</div>
-                            </div>
-                            <div class="file-actions">
-                                <a href="${file.file_path}" download="${file.original_name}" class="btn btn-sm btn-primary">
-                                    <i class="fas fa-download"></i> Завантажити
-                                </a>
-                            </div>
-                        </div>
-                    `;
-                    });
-                    filesContent += '</div>';
-                } else {
-                    filesContent = `
-                    <div class="empty-state">
-                        <i class="fas fa-file-upload"></i>
-                        <p>Немає прикріплених файлів</p>
-                    </div>
-                `;
-                }
-                $('#order-files-content').html(filesContent);
-
-                // Оновлюємо статус кнопок відповідно до статусу замовлення
-                updateOrderActionButtons(order);
-
-                // Приховуємо спіннер завантаження
-                $('.loading-spinner').hide();
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            $('.loading-spinner').hide();
-            $('#order-info-content').html('<div class="alert alert-danger">Помилка завантаження даних замовлення</div>');
-        });
-}
-
-// Функція для завантаження коментарів та історії замовлення
-function loadOrderComments(orderId) {
-    // Показуємо спіннер завантаження
-    $('.loading-spinner').show();
-
-    fetch(`dashboard.php?get_order_details=${orderId}`, {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const order = data.order;
-
-                // Заповнюємо вкладку з коментарями
-                let commentsContent = '';
-                if (order.comments && order.comments.length > 0) {
-                    commentsContent = '<div class="comments-list">';
-                    order.comments.forEach(comment => {
-                        const isAdmin = comment.is_admin == 1 || comment.author_role === 'admin';
-                        const commentDate = new Date(comment.created_at);
-                        const formattedDate = commentDate.toLocaleDateString() + ' ' + commentDate.toLocaleTimeString();
-
-                        commentsContent += `
-                        <div class="comment${isAdmin ? ' admin-comment' : ''}" data-id="${comment.id}">
-                            <div class="comment-header">
-                                <div class="comment-author">${comment.author_display_name || comment.author_name || 'Користувач'}</div>
-                                <div class="comment-date">${formattedDate}</div>
-                            </div>
-                            <div class="comment-text">${comment.comment}</div>
-                            ${!isAdmin && !['Завершено', 'Скасовано'].includes(order.status) ?
-                            `<div class="comment-actions">
-                                    <button class="btn btn-danger btn-sm delete-comment-btn" data-id="${comment.id}">
-                                        <i class="fas fa-trash"></i> Видалити
-                                    </button>
-                                </div>` : ''
-                        }
-                        </div>
-                    `;
-                    });
-                    commentsContent += '</div>';
-                } else {
-                    commentsContent = `
-                    <div class="empty-state">
-                        <i class="fas fa-comments"></i>
-                        <p>Немає коментарів</p>
-                    </div>
-                `;
-                }
-                $('#order-comments-content').html(commentsContent);
-
-                // Заповнюємо вкладку з історією змін
-                let historyContent = '';
-                if (order.status_history && order.status_history.length > 0) {
-                    historyContent = '<div class="history-timeline">';
-                    order.status_history.forEach(item => {
-                        const historyDate = new Date(item.changed_at);
-                        const formattedDate = historyDate.toLocaleDateString() + ' ' + historyDate.toLocaleTimeString();
-
-                        historyContent += `
-                        <div class="history-item">
-                            <div class="history-date">${formattedDate}</div>
-                            <div class="history-content">
-                                <div class="history-title">Змінено статус замовлення</div>
-                                <div class="history-details">
-                                    <span class="status-badge ${getStatusClass(item.previous_status)}">${item.previous_status}</span>
-                                    <i class="fas fa-long-arrow-alt-right"></i>
-                                    <span class="status-badge ${getStatusClass(item.new_status)}">${item.new_status}</span>
-                                </div>
-                                ${item.comment ? `<div class="history-comment">${item.comment}</div>` : ''}
-                                <div class="history-author">
-                                    <i class="fas fa-user"></i> ${item.user_name || 'Система'}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    });
-                    historyContent += '</div>';
-                } else {
-                    historyContent = `
-                    <div class="empty-state">
-                        <i class="fas fa-history"></i>
-                        <p>Історія змін відсутня</p>
-                    </div>
-                `;
-                }
-                $('#order-history-content').html(historyContent);
-
-                // Якщо замовлення завершене або скасоване, приховуємо форму коментарів
-                if (['Завершено', 'Скасовано'].includes(order.status)) {
-                    $('.comment-form').hide();
-                } else {
-                    $('.comment-form').show();
-                }
-
-                // Приховуємо спіннер завантаження
-                $('.loading-spinner').hide();
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            $('.loading-spinner').hide();
-            $('#order-comments-content').html('<div class="alert alert-danger">Помилка завантаження коментарів</div>');
-            $('#order-history-content').html('<div class="alert alert-danger">Помилка завантаження історії</div>');
-        });
-}
-
-// Функція для оновлення кнопок дій відповідно до статусу замовлення
-function updateOrderActionButtons(order) {
-    const $editBtn = $('#edit-order-btn');
-    const $cancelBtn = $('#cancel-order-btn');
-
-    // Приховуємо всі кнопки спочатку
-    $editBtn.hide();
-    $cancelBtn.hide();
-
-    // Перевіряємо, чи можна редагувати замовлення
-    const editableStatuses = ['Новий', 'Очікування', 'Підтверджено'];
-    if (editableStatuses.includes(order.status)) {
-        $editBtn.show();
-    }
-
-    // Перевіряємо, чи можна скасувати замовлення
-    const cancellableStatuses = ['Новий', 'Очікування', 'Підтверджено', 'В роботі'];
-    if (cancellableStatuses.includes(order.status)) {
-        $cancelBtn.show();
-    }
-}
-
-// Функція для завантаження даних замовлення для редагування
 function loadOrderForEditing(orderId) {
     fetch(`dashboard.php?get_order_details=${orderId}`, {
         method: 'GET',
@@ -3796,342 +2679,13 @@ function loadOrderForEditing(orderId) {
     })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                const order = data.order;
-
-                // Заповнюємо форму даними
-                $('#edit-device-type').val(order.device_type);
-                $('#edit-details').val(order.details);
-                $('#edit-phone').val(order.phone);
-                $('#edit-address').val(order.address || '');
-                $('#edit-delivery').val(order.delivery_method || '');
-                $('#edit-comment').val(order.user_comment || '');
-
-                // Заповнюємо список файлів
-                let filesListContent = '';
-                if (order.files && order.files.length > 0) {
-                    filesListContent = '<div class="files-grid edit-files-grid">';
-                    order.files.forEach(file => {
-                        let filePreview = '';
-                        if (file.file_type === 'image' || (file.file_mime && file.file_mime.startsWith('image/'))) {
-                            filePreview = `<img src="${file.file_path}" alt="${file.original_name}">`;
-                        } else {
-                            filePreview = `<i class="fas fa-file"></i>`;
-                        }
-
-                        filesListContent += `
-                        <div class="file-item" data-id="${file.id}">
-                            <div class="file-thumbnail">
-                                ${filePreview}
-                            </div>
-                            <div class="file-info">
-                                <div class="file-name">${file.original_name}</div>
-                                <div class="file-size">${formatFileSize(file.file_size)}</div>
-                            </div>
-                            <div class="file-actions">
-                                <div class="form-check">
-                                    <input type="checkbox" class="form-check-input" id="remove-file-${file.id}" name="remove_files[]" value="${file.id}">
-                                    <label class="form-check-label" for="remove-file-${file.id}">Видалити</label>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    });
-                    filesListContent += '</div>';
-                } else {
-                    filesListContent = `
-                    <p>Немає прикріплених файлів</p>
-                `;
-                }
-                $('#edit-files-list').html(filesListContent);
-
-                // Очищаємо попереднє перегляд нових файлів
-                $('#edit-files-preview').empty();
-                $('#edit-new-files').val('');
-            } else {
-                showNotification('error', data.message || 'Помилка завантаження даних замовлення');
-                closeModal('edit-order-modal');
+            // Обробка даних замовлення і заповнення форми
+            if (data.success && data.order) {
+                // Код для заповнення форми редагування
             }
         })
         .catch(error => {
             console.error('Error:', error);
             showNotification('error', 'Помилка завантаження даних замовлення');
-            closeModal('edit-order-modal');
         });
-}
-
-// Функція для відправлення коментаря
-function sendComment(orderId, commentText) {
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'add_comment': '1',
-            'order_id': orderId,
-            'comment': commentText,
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Коментар успішно додано');
-                $('#comment-text').val('');
-
-                // Оновлюємо список коментарів
-                loadOrderComments(orderId);
-            } else {
-                showNotification('error', data.message || 'Помилка при додаванні коментаря');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при додаванні коментаря');
-        });
-}
-
-// Функція для видалення коментаря
-function deleteComment(commentId) {
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'delete_comment': '1',
-            'comment_id': commentId,
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Коментар успішно видалено');
-
-                // Оновлюємо список коментарів
-                const orderId = $('#view-order-id').text();
-                loadOrderComments(orderId);
-            } else {
-                showNotification('error', data.message || 'Помилка при видаленні коментаря');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при видаленні коментаря');
-        });
-}
-
-// Функція для збереження змін замовлення
-function saveOrder() {
-    const form = document.getElementById('edit-order-form');
-    const formData = new FormData(form);
-    formData.append('update_order', '1');
-
-    fetch('dashboard.php', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Замовлення успішно оновлено');
-                closeModal('edit-order-modal');
-
-                // Оновлюємо дані в модальному вікні перегляду, якщо воно відкрите
-                const orderId = formData.get('order_id');
-                if ($('#view-order-modal').hasClass('active')) {
-                    loadOrderDetails(orderId);
-                    loadOrderComments(orderId);
-                } else {
-                    // Якщо модальне вікно перегляду не відкрите, перезавантажуємо сторінку
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1000);
-                }
-            } else {
-                showNotification('error', data.message || 'Помилка при оновленні замовлення');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при оновленні замовлення');
-        });
-}
-
-// Функція для підтвердження скасування замовлення
-function confirmCancelOrder() {
-    const orderId = $('#cancel-order-id').text();
-    const reason = $('#cancel-reason').val();
-
-    fetch('dashboard.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: new URLSearchParams({
-            'cancel_order': '1',
-            'order_id': orderId,
-            'reason': reason,
-            'csrf_token': config.csrfToken
-        })
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('success', 'Замовлення успішно скасовано');
-                closeModal('cancel-order-modal');
-
-                // Оновлюємо дані в модальному вікні перегляду, якщо воно відкрите
-                if ($('#view-order-modal').hasClass('active')) {
-                    loadOrderDetails(orderId);
-                    loadOrderComments(orderId);
-                } else {
-                    // Якщо модальне вікно перегляду не відкрите, перезавантажуємо сторінку
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1000);
-                }
-            } else {
-                showNotification('error', data.message || 'Помилка при скасуванні замовлення');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Помилка при скасуванні замовлення');
-        });
-}
-
-// Допоміжні функції форматування
-function formatDateTime(dateTimeStr) {
-    if (!dateTimeStr) return '';
-    const date = new Date(dateTimeStr);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString();
-}
-
-function formatFileSize(bytes) {
-    if (!bytes || bytes === 0) return '0 Б';
-    const k = 1024;
-    const sizes = ['Б', 'КБ', 'МБ', 'ГБ'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatPrice(price) {
-    if (!price) return '0,00 грн';
-    return new Intl.NumberFormat('uk-UA', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    }).format(price) + ' грн';
-}
-
-function getDeliveryMethodName(method) {
-    if (!method) return '';
-
-    switch (method) {
-        case 'self': return 'Самовивіз';
-        case 'courier': return 'Кур\'єр';
-        case 'nova-poshta': return 'Нова Пошта';
-        case 'ukrposhta': return 'Укрпошта';
-        default: return method;
-    }
-}
-
-function getStatusClass(status) {
-    if (!status) return 'status-default';
-
-    const statusLower = status.toLowerCase();
-
-    if (statusLower.includes('нов')) {
-        return 'status-new';
-    } else if (statusLower.includes('робот') || statusLower.includes('в роботі')) {
-        return 'status-in-progress';
-    } else if (statusLower.includes('очіку')) {
-        return 'status-pending';
-    } else if (statusLower.includes('заверш') || statusLower.includes('готов') || statusLower.includes('викон')) {
-        return 'status-completed';
-    } else if (statusLower.includes('скасова') || statusLower.includes('відмін')) {
-        return 'status-cancelled';
-    }
-
-    return 'status-default';
-}
-
-// Функція для відображення сповіщень
-function showNotification(type, message, duration = 3000) {
-    const container = document.getElementById('notification-container') || createNotificationContainer();
-
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-
-    let icon = '';
-    switch (type) {
-        case 'success':
-            icon = '<i class="fas fa-check-circle"></i>';
-            break;
-        case 'error':
-            icon = '<i class="fas fa-exclamation-circle"></i>';
-            break;
-        case 'info':
-            icon = '<i class="fas fa-info-circle"></i>';
-            break;
-        case 'warning':
-            icon = '<i class="fas fa-exclamation-triangle"></i>';
-            break;
-    }
-
-    notification.innerHTML = `
-        ${icon}
-        <span class="notification-message">${message}</span>
-        <button class="notification-close">&times;</button>
-    `;
-
-    container.appendChild(notification);
-
-    // Додати клас для анімації появи
-    setTimeout(() => {
-        notification.classList.add('show');
-    }, 10);
-
-    // Додати обробник події для кнопки закриття
-    const closeBtn = notification.querySelector('.notification-close');
-    closeBtn.addEventListener('click', () => {
-        closeNotification(notification);
-    });
-
-    // Автоматичне закриття після вказаного часу
-    setTimeout(() => {
-        closeNotification(notification);
-    }, duration);
-}
-
-// Створити контейнер для сповіщень, якщо він відсутній
-function createNotificationContainer() {
-    const container = document.createElement('div');
-    container.id = 'notification-container';
-    document.body.appendChild(container);
-    return container;
-}
-
-// Закрити сповіщення з анімацією
-function closeNotification(notification) {
-    notification.classList.remove('show');
-    notification.classList.add('hide');
-
-    setTimeout(() => {
-        notification.remove();
-    }, 300); // час анімації зникнення
 }

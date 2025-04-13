@@ -1039,6 +1039,15 @@ class Order {
             return ['allowed' => true, 'message' => '']; // За замовчуванням дозволяємо створення замовлення
         }
     }
+    /**
+     * Перевіряє, чи можна додавати коментарі до замовлення
+     * @param string $status Статус замовлення
+     * @return bool Результат перевірки
+     */
+    public function canAddComments($status) {
+        $nonCommentableStatuses = ['Завершено', 'Скасовано', 'Відмінено'];
+        return !in_array($status, $nonCommentableStatuses);
+    }
 
     /**
      * Отримання повідомлення про помилку при досягненні ліміту
