@@ -1,0 +1,140 @@
+/* Стилі для світлої теми */
+
+body {
+    background-color: #f8f9fa;
+    color: #212529;
+}
+
+.navbar {
+    background-color: #007bff !important;
+}
+
+.navbar-dark .navbar-brand,
+.navbar-dark .navbar-nav .nav-link {
+    color: #ffffff;
+}
+
+.card {
+    background-color: #ffffff;
+}
+
+.bg-primary {
+    background-color: #007bff !important;
+}
+
+.bg-info {
+    background-color: #17a2b8 !important;
+}
+
+.bg-warning {
+    background-color: #ffc107 !important;
+}
+
+.bg-success {
+    background-color: #28a745 !important;
+}
+
+.text-primary {
+    color: #007bff !important;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+.btn-primary:hover {
+    background-color: #0069d9;
+    border-color: #0062cc;
+}
+
+.btn-outline-primary {
+    color: #007bff;
+    border-color: #007bff;
+}
+
+.btn-outline-primary:hover {
+    background-color: #007bff;
+    border-color: #007bff;
+    color: white;
+}
+
+.table {
+    color: #212529;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.075);
+}
+
+.form-control, .form-select {
+    background-color: #ffffff;
+    border-color: #ced4da;
+    color: #212529;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #80bdff;
+    background-color: #ffffff;
+    color: #212529;
+}
+
+.sidebar-link {
+    color: #495057;
+}
+
+.sidebar-link:hover, .sidebar-link.active {
+    color: #007bff;
+}
+
+.comment {
+    background-color: #ffffff;
+    border-color: #e9ecef;
+}
+
+footer {
+    background-color: #343a40 !important;
+    color: #ffffff;
+}
+
+/* Додаткові налаштування для світлої теми */
+.dropdown-menu {
+    background-color: #ffffff;
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-item {
+    color: #212529;
+}
+
+.dropdown-item:hover, .dropdown-item:focus {
+    background-color: #f8f9fa;
+    color: #16181b;
+}
+
+.dropdown-item.active, .dropdown-item:active {
+    background-color: #007bff;
+    color: #ffffff;
+}
+
+.list-group-item {
+    background-color: #ffffff;
+    border-color: rgba(0, 0, 0, 0.125);
+}
+
+.modal-content {
+    background-color: #ffffff;
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+.notification-dropdown {
+    background-color: #ffffff;
+}
+
+.dropdown-item.unread {
+    background-color: #f2f9ff;
+}
+
+.dropdown-item.unread:hover {
+    background-color: #e2f4ff;
+}

@@ -1,0 +1,203 @@
+/* Стилі для темної теми */
+
+body {
+    background-color: #121212;
+    color: #e0e0e0;
+}
+
+.navbar {
+    background-color: #1a1a1a !important;
+}
+
+.navbar-dark .navbar-brand,
+.navbar-dark .navbar-nav .nav-link {
+    color: #f0f0f0;
+}
+
+.card {
+    background-color: #1e1e1e;
+    border-color: #333333;
+}
+
+.card-header, .card-footer {
+    background-color: #2a2a2a;
+    border-color: #333333;
+}
+
+.bg-primary {
+    background-color: #375a7f !important;
+}
+
+.bg-info {
+    background-color: #3498db !important;
+}
+
+.bg-warning {
+    background-color: #f39c12 !important;
+}
+
+.bg-success {
+    background-color: #00bc8c !important;
+}
+
+.text-primary {
+    color: #375a7f !important;
+}
+
+.btn-primary {
+    background-color: #375a7f;
+    border-color: #375a7f;
+}
+
+.btn-primary:hover {
+    background-color: #2b4764;
+    border-color: #28415b;
+}
+
+.btn-outline-primary {
+    color: #375a7f;
+    border-color: #375a7f;
+}
+
+.btn-outline-primary:hover {
+    background-color: #375a7f;
+    border-color: #375a7f;
+    color: white;
+}
+
+.table {
+    color: #e0e0e0;
+}
+
+.table thead th {
+    border-bottom-color: #333333;
+}
+
+.table td, .table th {
+    border-color: #333333;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(55, 90, 127, 0.2);
+}
+
+.form-control, .form-select {
+    background-color: #2a2a2a;
+    border-color: #444444;
+    color: #e0e0e0;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #375a7f;
+    background-color: #2a2a2a;
+    color: #e0e0e0;
+}
+
+.form-text {
+    color: #999999;
+}
+
+.sidebar-link {
+    color: #b0b0b0;
+}
+
+.sidebar-link:hover, .sidebar-link.active {
+    color: #375a7f;
+}
+
+.comment {
+    background-color: #2a2a2a;
+    border-color: #333333;
+}
+
+.admin-comment {
+    border-left: 4px solid #375a7f;
+}
+
+.comment-time, .notification-time {
+    color: #999999;
+}
+
+footer {
+    background-color: #1a1a1a !important;
+    color: #e0e0e0;
+}
+
+/* Додаткові налаштування для темної теми */
+.dropdown-menu {
+    background-color: #2a2a2a;
+    border-color: #444444;
+}
+
+.dropdown-item {
+    color: #e0e0e0;
+}
+
+.dropdown-item:hover, .dropdown-item:focus {
+    background-color: #333333;
+    color: #f0f0f0;
+}
+
+.dropdown-item.active, .dropdown-item:active {
+    background-color: #375a7f;
+    color: #ffffff;
+}
+
+.list-group-item {
+    background-color: #2a2a2a;
+    border-color: #444444;
+    color: #e0e0e0;
+}
+
+.modal-content {
+    background-color: #2a2a2a;
+    border-color: #444444;
+}
+
+.modal-header, .modal-footer {
+    border-color: #444444;
+}
+
+.notification-dropdown {
+    background-color: #2a2a2a;
+    border-color: #444444;
+}
+
+.dropdown-item.unread {
+    background-color: #2b3e50;
+}
+
+.dropdown-item.unread:hover {
+    background-color: #314559;
+}
+
+.alert-info {
+    background-color: #2b3e50;
+    border-color: #2b3e50;
+    color: #e0e0e0;
+}
+
+hr {
+    border-color: #444444;
+}
+
+.badge {
+    border-radius: 0.25rem;
+}
+
+::-webkit-scrollbar {
+    width: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: #2a2a2a;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #444444;
+    border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555555;
+}
