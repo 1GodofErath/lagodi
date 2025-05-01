@@ -1,0 +1,1355 @@
+/* Основні стилі */
+:root {
+    /* Світла тема за замовчуванням */
+    --bg-main: #f8f9fa;
+    --bg-card: #ffffff;
+    --bg-hover: #e9ecef;
+    --accent-primary: #007bff;
+    --accent-primary-hover: #0069d9;
+    --accent-secondary: #6c757d;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --border-color: #dee2e6;
+    --shadow-color: rgba(0, 0, 0, 0.15);
+    --shadow-color-lg: rgba(0, 0, 0, 0.175);
+
+    /* Кольори статусів */
+    --success-color: #28a745;
+    --info-color: #17a2b8;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --light-color: #f8f9fa;
+    --dark-color: #343a40;
+    --white-color: #ffffff;
+    --gray-100: #f8f9fa;
+    --gray-200: #e9ecef;
+    --gray-300: #dee2e6;
+    --gray-400: #ced4da;
+    --gray-500: #adb5bd;
+    --gray-600: #6c757d;
+    --gray-700: #495057;
+    --gray-800: #343a40;
+    --gray-900: #212529;
+
+    /* Кольори статусів для бейджів */
+    --status-new-bg: rgba(23, 162, 184, 0.2);
+    --status-new-color: #17a2b8;
+    --status-in-progress-bg: rgba(255, 193, 7, 0.2);
+    --status-in-progress-color: #856404;
+    --status-completed-bg: rgba(40, 167, 69, 0.2);
+    --status-completed-color: #28a745;
+    --status-canceled-bg: rgba(220, 53, 69, 0.2);
+    --status-canceled-color: #dc3545;
+    --status-waiting-bg: rgba(108, 117, 125, 0.2);
+    --status-waiting-color: #6c757d;
+
+    /* Загальні змінні */
+    --shadow-sm: 0 0.125rem 0.25rem var(--shadow-color);
+    --shadow: 0 0.5rem 1rem var(--shadow-color);
+    --shadow-lg: 0 1rem 3rem var(--shadow-color-lg);
+    --transition: all 0.3s ease;
+    --border-radius: 0.25rem;
+    --border-radius-lg: 0.5rem;
+    --font-sans-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-monospace: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --sidebar-width: 280px;
+    --sidebar-collapsed-width: 70px;
+}
+
+/* Темна тема */
+[data-theme="dark"] {
+    --bg-main: #121212;
+    --bg-card: #1e1e1e;
+    --bg-hover: #2c2c2c;
+    --accent-primary: #007bff;
+    --accent-primary-hover: #0069d9;
+    --accent-secondary: #6c757d;
+    --text-primary: #e4e6ef;
+    --text-secondary: #adb5bd;
+    --border-color: rgba(255, 255, 255, 0.1);
+    --shadow-color: rgba(0, 0, 0, 0.5);
+    --shadow-color-lg: rgba(0, 0, 0, 0.7);
+
+    /* Кольори статусів для бейджів у темній темі */
+    --status-new-bg: rgba(23, 162, 184, 0.3);
+    --status-in-progress-bg: rgba(255, 193, 7, 0.3);
+    --status-completed-bg: rgba(40, 167, 69, 0.3);
+    --status-canceled-bg: rgba(220, 53, 69, 0.3);
+    --status-waiting-bg: rgba(108, 117, 125, 0.3);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-sans-serif);
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background-color: var(--bg-main);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Блокування прокрутки тіла при відкритому меню на мобільних */
+body.no-scroll {
+    overflow: hidden;
+}
+
+/* Загальна структура */
+.wrapper {
+    display: flex;
+    min-height: 100vh;
+    position: relative;
+}
+
+/* Затемнення фону при відкритому мобільному меню */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    display: none;
+}
+
+.overlay.active {
+    display: block;
+}
+
+/* Стан згорнутого сайдбару */
+.sidebar-collapsed .sidebar {
+    width: var(--sidebar-collapsed-width);
+}
+
+.sidebar-collapsed .sidebar .logo {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+}
+
+.sidebar-collapsed .sidebar .user-details,
+.sidebar-collapsed .sidebar .edit-profile-btn {
+    display: none;
+}
+
+.sidebar-collapsed .sidebar .nav-link {
+    padding: 0.75rem;
+    justify-content: center;
+}
+
+.sidebar-collapsed .sidebar .nav-link i {
+    margin-right: 0;
+}
+
+.sidebar-collapsed .sidebar .nav-link span {
+    display: none;
+}
+
+.sidebar-collapsed .sidebar .badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    margin-left: 0;
+}
+
+.sidebar-collapsed .sidebar .theme-switcher {
+    display: none;
+}
+
+.sidebar-collapsed .main-content {
+    margin-left: var(--sidebar-collapsed-width);
+}
+
+/* Стилі сайдбару */
+.sidebar {
+    width: var(--sidebar-width);
+    background-color: var(--bg-card);
+    box-shadow: var(--shadow);
+    transition: var(--transition);
+    z-index: 1000;
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+@media (max-width: 991.98px) {
+    .sidebar {
+        transform: translateX(-100%);
+        width: var(--sidebar-width) !important;
+    }
+
+    .sidebar.mobile-active {
+        transform: translateX(0);
+    }
+
+    .sidebar-collapsed .main-content {
+        margin-left: 0;
+    }
+
+    .main-content {
+        margin-left: 0 !important;
+    }
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    height: 60px;
+}
+
+.logo {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--accent-primary);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: var(--transition);
+}
+
+.toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    min-width: 32px;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.toggle-btn:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.user-info {
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.user-avatar {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background-color: var(--accent-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 0.75rem;
+    flex-shrink: 0;
+}
+
+.user-details {
+    text-align: center;
+    margin-bottom: 1rem;
+    width: 100%;
+}
+
+.user-details h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+}
+
+.user-details p {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.edit-profile-btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background-color: transparent;
+    color: var(--accent-primary);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--border-radius);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: var(--transition);
+    text-align: center;
+}
+
+.edit-profile-btn:hover {
+    background-color: var(--accent-primary);
+    color: white;
+}
+
+.sidebar-nav {
+    padding: 1rem 0;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: var(--transition);
+    font-weight: 500;
+    position: relative;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.nav-link:hover,
+.nav-link.active {
+    background-color: var(--bg-hover);
+    color: var(--accent-primary);
+}
+
+.nav-link i {
+    margin-right: 0.75rem;
+    font-size: 1.25rem;
+    min-width: 20px;
+    text-align: center;
+}
+
+.nav-link span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nav-link.logout {
+    margin-top: 1rem;
+    color: var(--danger-color);
+    border-top: 1px solid var(--border-color);
+    padding-top: 1rem;
+}
+
+.nav-divider {
+    height: 1px;
+    margin: 1rem 0;
+    background-color: var(--border-color);
+}
+
+/* Перемикач темы */
+.theme-switcher {
+    padding: 0.75rem 1.5rem;
+    margin-top: 1rem;
+}
+
+.theme-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.theme-options {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.theme-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--border-radius);
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: var(--transition);
+    flex: 1;
+}
+
+.theme-option:hover {
+    background-color: var(--accent-primary);
+    color: white;
+}
+
+.theme-option.active {
+    background-color: var(--accent-primary);
+    color: white;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: var(--danger-color);
+    color: white;
+    margin-left: auto;
+    z-index: 2;
+}
+
+/* Основний контент */
+.main-content {
+    flex: 1;
+    margin-left: var(--sidebar-width);
+    transition: var(--transition);
+    width: 100%;
+}
+
+.main-header {
+    background-color: var(--bg-card);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    height: 60px;
+}
+
+.menu-toggle {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.25rem;
+}
+
+@media (max-width: 991.98px) {
+    .menu-toggle {
+        display: block;
+    }
+}
+
+.header-title h1 {
+    font-size: 1.5rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+/* Кнопка переключення теми в хедері */
+.theme-switch-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.theme-switch-btn:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* Стилі для сповіщень у стилі YouTube */
+.notification-dropdown {
+    position: relative;
+}
+
+.notification-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    position: relative;
+}
+
+.notification-btn .badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+}
+
+.notification-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    width: 350px;
+    max-height: 450px;
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    display: none;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.notification-dropdown-menu.show {
+    display: block;
+}
+
+.notification-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.notification-header h3 {
+    font-size: 1rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.mark-all-read {
+    background: transparent;
+    border: none;
+    color: var(--accent-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+.notification-body {
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.notification-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.notification-item:hover {
+    background-color: var(--bg-hover);
+}
+
+.notification-item.unread {
+    background-color: rgba(0, 123, 255, 0.1);
+}
+
+[data-theme="dark"] .notification-item.unread {
+    background-color: rgba(0, 123, 255, 0.2);
+}
+
+.notification-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: var(--bg-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: var(--accent-primary);
+    flex-shrink: 0;
+}
+
+.notification-content {
+    flex: 1;
+}
+
+.notification-content h4 {
+    font-size: 0.9rem;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+
+.notification-content p {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin: 0 0 0.5rem 0;
+}
+
+.notification-time {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.notification-footer {
+    padding: 0.75rem;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.view-all {
+    color: var(--accent-primary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.user-dropdown {
+    position: relative;
+}
+
+.user-dropdown-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--text-primary);
+}
+
+.user-avatar-small {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: var(--accent-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: bold;
+}
+
+.user-name {
+    display: inline-block;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    width: 200px;
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    display: none;
+    z-index: 1000;
+    padding: 0.5rem 0;
+}
+
+.user-dropdown-menu.show {
+    display: block;
+}
+
+.user-dropdown-menu a {
+    display: block;
+    padding: 0.5rem 1rem;
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.user-dropdown-menu a:hover {
+    background-color: var(--bg-hover);
+}
+
+.user-dropdown-menu i {
+    margin-right: 0.5rem;
+    width: 1rem;
+    text-align: center;
+}
+
+.dropdown-divider {
+    height: 0;
+    margin: 0.5rem 0;
+    overflow: hidden;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Контент */
+.content-wrapper {
+    padding: 1.5rem;
+}
+
+/* Оновлений блок привітання */
+.welcome-card {
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 2rem;
+    overflow: hidden;
+    position: relative;
+}
+
+.welcome-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: linear-gradient(90deg, var(--accent-primary), var(--info-color));
+}
+
+.welcome-info {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.welcome-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: var(--accent-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.welcome-text h2 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.welcome-text p {
+    color: var(--text-secondary);
+    margin-bottom: 0;
+}
+
+@media (max-width: 575.98px) {
+    .welcome-info {
+        flex-direction: column;
+        text-align: center;
+    }
+}
+
+/* Статистика */
+.stats-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stats-card {
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.stats-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow);
+}
+
+.stats-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+}
+
+.stats-card.blue {
+    background-color: var(--accent-primary);
+    color: white;
+}
+
+.stats-card.blue::before {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.stats-card.teal {
+    background-color: var(--info-color);
+    color: white;
+}
+
+.stats-card.teal::before {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.stats-card.yellow {
+    background-color: var(--warning-color);
+    color: var(--gray-800);
+}
+
+.stats-card.yellow::before {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.stats-card.green {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.stats-card.green::before {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.stats-card.red {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.stats-card.red::before {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.stats-label {
+    font-size: 1.25rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.stats-value {
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+@media (max-width: 767.98px) {
+    .stats-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stats-label {
+        font-size: 1.1rem;
+    }
+
+    .stats-value {
+        font-size: 2.5rem;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .stats-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Секції */
+.section-container {
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 2rem;
+    overflow: hidden;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.section-title {
+    font-size: 1.25rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.view-all-link {
+    color: var(--accent-primary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+}
+
+.view-all-link:hover {
+    text-decoration: underline;
+}
+
+/* Пусте повідомлення */
+.empty-state {
+    padding: 3rem 1.5rem;
+    text-align: center;
+}
+
+.empty-icon {
+    font-size: 3rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+/* Таблиця замовлень */
+.orders-table-container {
+    padding: 1rem 1.5rem;
+    overflow-x: auto;
+}
+
+@media (max-width: 767.98px) {
+    .orders-table-container {
+        display: none;
+    }
+}
+
+.orders-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.orders-table th,
+.orders-table td {
+    padding: 1rem 0.75rem;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.orders-table th {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.orders-table td {
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.orders-table tr:last-child td {
+    border-bottom: none;
+}
+
+.service-name-cell {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Мобільна версія таблиці */
+.mobile-orders-list {
+    display: none;
+    padding: 1rem;
+}
+
+.mobile-orders-list {
+    display: none;
+    padding: 1rem;
+}
+
+@media (max-width: 767.98px) {
+    .mobile-orders-list {
+        display: block;
+    }
+}
+
+.mobile-order-card {
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-left: 3px solid var(--accent-primary);
+}
+
+.mobile-order-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.mobile-order-id {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.mobile-order-content {
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.mobile-order-service,
+.mobile-order-date {
+    margin-bottom: 0.5rem;
+}
+
+.mobile-order-footer {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Стили для статусов заказов */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-radius: 50rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status-badge i {
+    margin-right: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.status-badge.status-новий,
+.status-badge.status-новий {
+    background-color: var(--status-new-bg);
+    color: var(--status-new-color);
+}
+
+.status-badge.status-в-роботі {
+    background-color: var(--status-in-progress-bg);
+    color: var(--status-in-progress-color);
+}
+
+.status-badge.status-виконано,
+.status-badge.status-завершено {
+    background-color: var(--status-completed-bg);
+    color: var(--status-completed-color);
+}
+
+.status-badge.status-неможливо-виконати,
+.status-badge.status-не-виконано,
+.status-badge.status-скасовано {
+    background-color: var(--status-canceled-bg);
+    color: var(--status-canceled-color);
+}
+
+.status-badge.status-очікується-поставки-товару {
+    background-color: var(--status-waiting-bg);
+    color: var(--status-waiting-color);
+}
+
+/* Заглавные варианты статуса для совместимости */
+.status-badge.status-НОВИЙ,
+.status-badge.status-НОВИЙ {
+    background-color: var(--status-new-bg);
+    color: var(--status-new-color);
+}
+
+.status-badge.status-В-РОБОТІ {
+    background-color: var(--status-in-progress-bg);
+    color: var(--status-in-progress-color);
+}
+
+.status-badge.status-ВИКОНАНО,
+.status-badge.status-ЗАВЕРШЕНО {
+    background-color: var(--status-completed-bg);
+    color: var(--status-completed-color);
+}
+
+.status-badge.status-НЕМОЖЛИВО-ВИКОНАТИ,
+.status-badge.status-НЕ-ВИКОНАНО,
+.status-badge.status-СКАСОВАНО {
+    background-color: var(--status-canceled-bg);
+    color: var(--status-canceled-color);
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--bg-hover);
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.action-btn:hover {
+    background-color: var(--accent-primary);
+    color: white;
+}
+
+/* Карточки послуг */
+.services-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    padding: 1.5rem;
+}
+
+@media (max-width: 767.98px) {
+    .services-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.service-card {
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.service-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow);
+}
+
+.service-title {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.service-description {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.services-list {
+    list-style-type: none;
+    margin-bottom: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.services-list li {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-primary);
+}
+
+.price-badge {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--border-radius);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Кнопки */
+.btn-primary {
+    display: inline-block;
+    padding: 0.75rem 1.5rem;
+    background-color: var(--accent-primary);
+    color: white;
+    text-decoration: none;
+    border-radius: var(--border-radius);
+    text-align: center;
+    font-weight: 500;
+    transition: var(--transition);
+    border: none;
+    cursor: pointer;
+}
+
+.btn-primary:hover {
+    background-color: var(--accent-primary-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* Адаптивна верстка */
+@media (max-width: 767.98px) {
+    .header-title h1 {
+        font-size: 1.35rem;
+    }
+
+    .notification-dropdown-menu {
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        width: 100%;
+        max-width: none;
+        max-height: 80vh;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .content-wrapper {
+        padding: 1rem;
+    }
+
+    .header-title h1 {
+        font-size: 1.25rem;
+    }
+
+    .user-name {
+        display: none;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .notification-dropdown-menu {
+        max-height: 70vh;
+    }
+}
+}
+/* Додаткові стилі для статистики */
+.stats-card.orange {
+    background-color: #fd7e14;
+    color: white;
+}
+
+.stats-card.orange::before {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Стилі для сповіщень */
+.notification-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    width: 350px;
+    max-height: 450px;
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    display: none;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.notification-dropdown-menu.show {
+    display: block;
+}
+
+.notification-body {
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.notification-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+    color: var(--text-primary);
+}
+
+.notification-item:hover {
+    background-color: var(--bg-hover);
+}
+
+.notification-item.unread {
+    background-color: rgba(0, 123, 255, 0.1);
+}
+
+[data-theme="dark"] .notification-item.unread {
+    background-color: rgba(0, 123, 255, 0.2);
+}
+
+.notification-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background-color: var(--bg-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.125rem;
+    color: var(--accent-primary);
+    flex-shrink: 0;
+    position: relative;
+}
+
+.notification-icon i.new {
+    position: relative;
+}
+
+.notification-icon i.new::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    background-color: var(--danger-color);
+    border-radius: 50%;
+}
+
+.notification-empty {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+/* Стилі для статусів очікування поставок */
+.status-badge.status-очікується-поставки-товару {
+    background-color: rgba(253, 126, 20, 0.2);
+    color: #fd7e14;
+}
+
+[data-theme="dark"] .status-badge.status-очікується-поставки-товару {
+    background-color: rgba(253, 126, 20, 0.3);
+    color: #ffa75a;
+}
