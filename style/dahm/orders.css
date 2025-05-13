@@ -1,0 +1,1831 @@
+/* Вбудовані стилі для плавного переходу тем */
+html.color-theme-in-transition,
+html.color-theme-in-transition *,
+html.color-theme-in-transition *:before,
+html.color-theme-in-transition *:after {
+    transition: all 750ms !important;
+    transition-delay: 0 !important;
+}
+
+/* Загальне покращення відображення блоків замовлень */
+.orders-container {
+    margin-bottom: 2rem;
+    padding: 0 1.5rem; /* Відступ справа і зліва для всього контейнера */
+}
+
+/* Фіксація прозорості на світлій темі */
+html[data-theme="light"] .order-item,
+html[data-theme="light"] .summary-item,
+html[data-theme="light"] .order-details-content {
+    background-color: rgba(240, 240, 240, 0.9) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="dark"] .order-item,
+html[data-theme="dark"] .summary-item,
+html[data-theme="dark"] .order-details-content {
+    background-color: rgba(45, 45, 45, 0.9) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Покращення відображення статусів */
+.status-marker {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+    background-color: rgba(255, 255, 255, 0.15);
+    padding: 4px 10px;
+    border-radius: 30px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+}
+
+html[data-theme="light"] .status-marker {
+    background-color: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Стилізація відображення статусу в деталях замовлення */
+.order-status-badge {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border-radius: 30px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Покращення відображення карток замовлень */
+.order-item {
+    position: relative;
+    border-radius: 10px;
+    padding: 25px;
+    border: none;
+    margin-bottom: 15px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.order-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Покращення центрування і відступів */
+.orders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 20px;
+    padding: 0.5rem;
+}
+
+/* Стилізація заголовків замовлень */
+.order-title {
+    color: #0d6efd;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.3rem;
+    font-weight: 600;
+    padding-right: 100px; /* Щоб не перекривати статус */
+}
+
+html[data-theme="light"] .order-title {
+    color: #0056b3;
+}
+
+/* Обмеження кількості коментарів та скролінг */
+.comments-list-container {
+    max-height: 500px;
+    overflow-y: auto;
+    padding-right: 10px;
+    position: relative;
+}
+
+.comments-list-container.collapsed {
+    max-height: 500px; /* Висота для 3-х коментарів */
+    overflow: hidden;
+}
+
+.show-more-comments {
+    display: flex;
+    justify-content: center;
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+
+.show-more-button {
+    background-color: rgba(13, 110, 253, 0.1);
+    border: none;
+    color: #0d6efd;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.show-more-button:hover {
+    background-color: rgba(13, 110, 253, 0.2);
+}
+
+html[data-theme="light"] .show-more-button {
+    background-color: rgba(13, 110, 253, 0.15);
+    color: #0056b3;
+}
+
+/* Лічильники замовлень */
+.orders-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    margin: 0 0.5rem 25px;
+}
+
+.summary-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px;
+    border-radius: 10px;
+    transition: transform 0.2s;
+}
+
+.summary-item:hover {
+    transform: translateY(-2px);
+}
+
+/* Покращення кнопки деталей */
+.btn-details {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #0d6efd;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: background-color 0.15s, transform 0.15s;
+}
+
+.btn-details:hover {
+    background-color: #0b5ed7;
+    transform: translateY(-2px);
+}
+
+/* Покращена панель фільтрів */
+.filter-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0.5rem;
+    margin-bottom: 25px;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+html[data-theme="dark"] .filter-panel {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="light"] .filter-panel {
+    background-color: rgba(0, 0, 0, 0.03);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Уніфіковані стилі для статусів замовлень */
+.status-badge,
+.status-indicator,
+.order-status-badge {
+    display: inline-block;
+    font-weight: 600;
+    border-radius: 30px;
+}
+
+.order-status-badge {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+}
+
+.status-indicator {
+    padding: 6px 12px;
+}
+
+/* Базові кольори для статусів */
+.status-pending {
+    background-color: #ffc107;
+    color: #000;
+}
+
+.status-processing {
+    background-color: #0d6efd;
+    color: #fff;
+}
+
+.status-waiting {
+    background-color: #ff9800;
+    color: #fff;
+}
+
+.status-completed {
+    background-color: #198754;
+    color: #fff;
+}
+
+.status-cancelled {
+    background-color: #dc3545;
+    color: #fff;
+}
+
+.status-impossible {
+    background-color: #6c757d;
+    color: #fff;
+}
+
+/* Кольори крапок статусів у списку замовлень */
+.status-marker .status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.status-marker-pending .status-dot { background-color: #ffc107; }
+.status-marker-processing .status-dot { background-color: #0d6efd; }
+.status-marker-waiting .status-dot { background-color: #ff9800; }
+.status-marker-completed .status-dot { background-color: #198754; }
+.status-marker-cancelled .status-dot { background-color: #dc3545; }
+.status-marker-impossible .status-dot { background-color: #6c757d; }
+
+/* Кольори іконок у лічильниках */
+.summary-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    border-radius: 50%;
+}
+
+.pending-icon { background-color: #ffc107; color: #000; }
+.processing-icon { background-color: #0d6efd; color: #fff; }
+.waiting-icon { background-color: #ff9800; color: #fff; }
+.completed-icon { background-color: #198754; color: #fff; }
+.cancelled-icon { background-color: #dc3545; color: #fff; }
+.impossible-icon { background-color: #6c757d; color: #fff; }
+
+.order-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 20px 0;
+}
+
+.order-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.order-status {
+    font-weight: bold;
+    padding: 5px 12px;
+    border-radius: 50px;
+    font-size: 0.9rem;
+}
+
+.order-details-content {
+    background-color: rgba(30, 30, 30, 0.2);
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 30px;
+}
+
+.order-info-grid {
+    display: grid;
+    row-gap: 15px;
+}
+
+.info-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    align-items: baseline;
+}
+
+.info-label {
+    min-width: 100px;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 500;
+}
+
+.info-value {
+    flex: 1;
+    font-weight: 400;
+    word-break: break-word;
+}
+
+.detail-row {
+    display: flex;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.detail-label {
+    min-width: 200px;
+    font-weight: bold;
+    color: var(--text-secondary);
+    padding-right: 20px;
+}
+
+.detail-value {
+    flex: 1;
+    min-width: 200px;
+    color: var(--text-primary);
+}
+
+/* Секція файлів */
+.files-section {
+    margin-top: 25px;
+}
+
+.section-title {
+    font-size: 1.2rem;
+    margin-bottom: 15px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.files-list {
+    display: grid;
+    gap: 10px;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 15px;
+    background-color: rgba(40, 40, 40, 0.3);
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.file-item:hover {
+    background-color: rgba(50, 50, 50, 0.4);
+}
+
+.file-icon {
+    font-size: 1.8rem;
+    color: #0d6efd;
+    margin-right: 12px;
+}
+
+.file-info {
+    flex: 1;
+}
+
+.file-name {
+    font-weight: 500;
+    margin-bottom: 3px;
+}
+
+.file-date {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.file-actions a {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.2rem;
+    transition: color 0.2s;
+}
+
+.file-actions a:hover {
+    color: #0d6efd;
+}
+
+/* Секція коментарів */
+.comments-section {
+    margin-top: 30px;
+}
+
+.comments-title {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    font-weight: 600;
+}
+
+.comment-list {
+    margin-bottom: 20px;
+}
+
+.empty-comments {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.empty-comments i {
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+}
+
+.empty-comments p {
+    font-size: 1.1rem;
+}
+
+/* Покращені стилі для коментарів */
+.comment-item {
+    display: flex;
+    margin-bottom: 20px;
+    position: relative;
+}
+
+.comment-left-border {
+    width: 4px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    margin-right: 15px;
+}
+
+.admin-border {
+    background-color: #dc3545;
+}
+
+.comment-content-wrapper {
+    flex: 1;
+    padding-bottom: 15px;
+    position: relative;
+}
+
+.admin-comment .comment-content-wrapper {
+    background-color: rgba(220, 53, 69, 0.05);
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.comment-author {
+    display: flex;
+    align-items: center;
+}
+
+.author-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #0d6efd;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    font-weight: 500;
+    margin-right: 12px;
+}
+
+.admin-avatar {
+    background-color: #dc3545;
+}
+
+.author-info {
+    display: flex;
+    align-items: center;
+}
+
+.author-name {
+    font-weight: 500;
+    font-size: 1.1rem;
+    margin-right: 8px;
+}
+
+.admin-badge {
+    background-color: #dc3545;
+    color: white;
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    border-radius: 3px;
+}
+
+.comment-time {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
+}
+
+.comment-text {
+    font-size: 1rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 15px;
+}
+
+.comment-attachment {
+    margin-top: 10px;
+}
+
+.attachment-link {
+    display: inline-flex;
+    align-items: center;
+    color: #0d6efd;
+    font-size: 0.9rem;
+    text-decoration: none;
+    padding: 6px 12px;
+    background-color: rgba(13, 110, 253, 0.1);
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.attachment-link i {
+    margin-right: 6px;
+    font-size: 1.1rem;
+}
+
+.attachment-link:hover {
+    background-color: rgba(13, 110, 253, 0.2);
+}
+
+.comment-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.delete-comment {
+    display: inline-flex;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.85rem;
+    transition: color 0.2s;
+}
+
+.delete-comment i {
+    margin-right: 5px;
+}
+
+.delete-comment:hover {
+    color: #dc3545;
+}
+
+/* Форма додавання коментаря */
+.comment-form-container {
+    background-color: rgba(30, 30, 30, 0.2);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+}
+
+.form-title {
+    font-size: 1.2rem;
+    margin-bottom: 15px;
+    font-weight: 500;
+}
+
+.comment-form .form-control {
+    background-color: rgba(20, 20, 20, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border-radius: 6px;
+    resize: vertical;
+    padding: 12px 15px;
+}
+
+.comment-form .form-control:focus {
+    border-color: #0d6efd;
+    outline: none;
+}
+
+.comment-form .form-control::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.form-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 15px;
+}
+
+.file-upload-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.file-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+    transition: color 0.2s;
+}
+
+.file-upload-btn i {
+    margin-right: 6px;
+}
+
+.file-upload-btn:hover {
+    color: #0d6efd;
+}
+
+.file-input {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.file-name {
+    margin-left: 10px;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.form-control {
+    width: 100%;
+    padding: 10px 15px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-primary);
+    transition: border-color 0.2s;
+}
+
+.form-control:focus {
+    border-color: var(--accent-primary);
+    outline: none;
+}
+
+textarea.form-control {
+    min-height: 120px;
+    resize: vertical;
+}
+
+/* Оновлені стилі для відповідності зі скріншотом */
+
+/* Стилі для панелі фільтрів */
+.filter-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0.5rem;
+    margin-bottom: 25px;
+    border-radius: 8px;
+}
+
+.filters {
+    display: flex;
+    gap: 15px;
+}
+
+/* Стиль для інформаційних рядків */
+.order-info-line {
+    display: flex;
+    margin-bottom: 10px;
+}
+
+/* Стиль для часу */
+.time-detail {
+    background-color: rgba(30, 30, 30, 0.4);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    font-size: 0.85rem;
+}
+
+/* Стиль номера замовлення */
+.order-number-line {
+    margin-bottom: 15px;
+    font-weight: 500;
+}
+
+/* Анімації для елементів */
+.button, .btn-primary {
+    background-color: #0d6efd;
+    border: none;
+    color: white;
+    padding: 8px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.btn-primary i {
+    margin-right: 6px;
+}
+
+.btn-primary:hover {
+    background-color: #0b5ed7;
+}
+
+/* Фікс для помилки htmlspecialchars */
+.empty-value {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+/* Нотифікації як в dashboard */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 280px;
+    max-width: 400px;
+    transform: translateY(-20px);
+    opacity: 0;
+    transition: transform 0.4s ease, opacity 0.4s ease;
+}
+
+.notification.show {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.notification-success {
+    background-color: var(--success-bg, #e3f3e6);
+    border-left: 4px solid var(--success, #28a745);
+    color: var(--success-text, #155724);
+}
+
+.notification-error {
+    background-color: var(--error-bg, #f8e7e7);
+    border-left: 4px solid var(--error, #dc3545);
+    color: var(--error-text, #721c24);
+}
+
+.notification-warning {
+    background-color: var(--warning-bg, #fff3e0);
+    border-left: 4px solid var(--warning, #fd7e14);
+    color: var(--warning-text, #663c00);
+}
+
+.notification-info {
+    background-color: var(--info-bg, #e6f5fb);
+    border-left: 4px solid var(--info, #17a2b8);
+    color: var(--info-text, #0c5460);
+}
+
+.notification-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.notification-content {
+    flex-grow: 1;
+}
+
+.notification-title {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: inherit;
+    opacity: 0.7;
+    transition: opacity 0.3s;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.notification-close:hover {
+    opacity: 1;
+}
+
+/* Нові стилі для сторінки деталей замовлення відповідно до скріншоту */
+.order-details-container {
+    padding: 0;
+    position: relative;
+}
+
+.back-button {
+    position: absolute;
+    top: 0;
+    left: 0;
+    font-size: 1.5rem;
+    z-index: 10;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    margin-left: -10px;
+    margin-top: -10px;
+    padding: 5px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+html[data-theme="light"] .back-button {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="dark"] .back-button {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.back-button a {
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.3s;
+    width: 100%;
+    height: 100%;
+}
+
+.order-title-wrapper {
+    margin-top: 20px; /* Додаємо відступ зверху для заголовка */
+}
+
+/* Стилізація випадаючого списку для темної теми */
+html[data-theme="dark"] .form-control,
+html[data-theme="dark"] select.form-control {
+    background-color: #2d2d2d;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+html[data-theme="dark"] .form-control:focus,
+html[data-theme="dark"] select.form-control:focus {
+    border-color: #0d6efd;
+}
+
+html[data-theme="dark"] select.form-control option {
+    background-color: #2d2d2d;
+    color: #ffffff;
+}
+
+/* Стилізація тексту для світлої теми */
+html[data-theme="light"] .order-title,
+html[data-theme="light"] .section-title {
+    color: #000000;
+}
+
+html[data-theme="light"] .info-label,
+html[data-theme="light"] .info-value {
+    color: #000000;
+}
+
+html[data-theme="light"] .order-info-line .info-label {
+    color: #505050;
+    font-weight: 500;
+}
+
+html[data-theme="light"] .order-info-line .info-value {
+    color: #000000;
+}
+
+html[data-theme="light"] .time-detail {
+    background-color: #e5e5e5;
+    color: #333;
+}
+
+/* Фіксація кольорів заголовків для обох тем */
+html[data-theme="dark"] .section-title {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+html[data-theme="light"] .section-title {
+    color: #000000;
+    font-weight: 600;
+}
+
+/* Стилізація випадаючих списків */
+.form-control-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    border-radius: 0.25rem;
+}
+
+/* Покращений стиль для випадаючих списків */
+select.form-control {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23808080' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px 12px;
+    padding-right: 2rem !important;
+    vertical-align: middle;
+}
+
+/* Виправлення для випадаючих списків на темній темі */
+html[data-theme="dark"] select.form-control {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23ffffff' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+}
+
+/* Стилі для тексту "Список замовлень" */
+html[data-theme="light"] h2.section-title {
+    color: #000000;
+    font-weight: 700;
+}
+
+html[data-theme="dark"] h2.section-title {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+/* Стилізація тексту в блоках замовлень для світлої теми */
+html[data-theme="light"] .order-number-line {
+    color: #000000;
+}
+
+html[data-theme="light"] .description-preview {
+    color: #000000;
+}
+
+/* Покращений вигляд фільтрів */
+.filter-panel {
+    border: none !important;
+}
+
+html[data-theme="dark"] .filter-panel {
+    background-color: rgba(45, 45, 45, 0.7);
+}
+
+html[data-theme="light"] .filter-panel {
+    background-color: rgba(240, 240, 240, 0.9);
+}
+
+/* Покращений контраст для тексту на світлій темі */
+html[data-theme="light"] .section-container .order-item .order-info-line .info-label i {
+    color: #505050;
+}
+
+/* Покращений контраст для статусу на обох темах */
+.status-marker {
+    font-weight: 600;
+}
+
+html[data-theme="light"] .status-marker {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Фіксація кольору тексту міток у деталях замовлення для світлої теми */
+html[data-theme="light"] .order-details-content .info-label {
+    color: #000000;
+    font-weight: 500;
+}
+
+/* Для всіх міток на світлій темі */
+html[data-theme="light"] .info-label {
+    color: #000000;
+}
+
+/* Покращення контрасту для заголовків секцій на світлій темі */
+html[data-theme="light"] .section-title,
+html[data-theme="light"] .comments-title,
+html[data-theme="light"] h3.section-title,
+html[data-theme="light"] .order-title {
+    color: #000000;
+}
+
+/* Текст "Коментарі" на світлій темі */
+html[data-theme="light"] .comments-section .comments-title {
+    color: #000000;
+}
+
+/* Покращення контрасту для міток "Номер замовлення", "Послуга", "Опис", "Статус", "Дата створення" */
+html[data-theme="light"] .order-info-grid .info-label {
+    color: #000000;
+    font-weight: 600;
+}
+
+/* Покращення контрасту для значень у деталях замовлення */
+html[data-theme="light"] .order-info-grid .info-value {
+    color: #000000;
+}
+
+/* Покращення стилю для деталей замовлення на світлій темі */
+html[data-theme="light"] .order-details-content {
+    background-color: #f5f5f5;
+    border: 1px solid #e0e0e0;
+}
+
+/* Покращення контрасту для форми коментарів на світлій темі */
+html[data-theme="light"] .comment-form-container .form-title {
+    color: #000000;
+}
+
+/* Фіксація кольору заголовка "Ремонт комп'ютера" на світлій темі */
+html[data-theme="light"] .order-title-wrapper .order-title {
+    color: #0056b3;
+    font-weight: 600;
+}
+
+/* Фіксація кольору стрілки "Назад" на світлій темі */
+html[data-theme="light"] .back-button a {
+    color: #0056b3;
+}
+
+html[data-theme="light"] .back-button a:hover {
+    color: #003d7a;
+}
+
+/* Зміна кольору тексту в коментарях на світлій темі */
+html[data-theme="light"] .comment-text {
+    color: #000000;
+}
+
+/* Стиль повідомлення про закрите замовлення */
+.closed-order-message {
+    background-color: rgba(220, 53, 69, 0.1);
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid #dc3545;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+html[data-theme="light"] .closed-order-message {
+    background-color: rgba(220, 53, 69, 0.05);
+    border-left: 4px solid #dc3545;
+    color: #721c24;
+}
+
+.closed-order-message i {
+    font-size: 1.5rem;
+    color: #dc3545;
+}
+
+/* Додаткові покращення для коментарів */
+html[data-theme="light"] .comment-author .author-name {
+    color: #000000;
+}
+
+html[data-theme="light"] .comment-time {
+    color: #555555;
+}
+
+html[data-theme="light"] .file-date {
+    color: #555555;
+}
+
+html[data-theme="light"] .empty-comments {
+    color: #555555;
+}
+
+html[data-theme="light"] .comment-item {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="light"] .comment-left-border {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme="light"] .admin-border {
+    background-color: #dc3545;
+}
+
+/* Адаптивність */
+@media (max-width: 768px) {
+    .filter-panel {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+
+    .filters {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .search-group {
+        width: 100%;
+    }
+
+    .orders-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .order-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .detail-label, .detail-value {
+        width: 100%;
+        min-width: unset;
+        padding-right: 0;
+    }
+
+    .detail-label {
+        margin-bottom: 5px;
+    }
+
+    .detail-row {
+        flex-direction: column;
+    }
+
+    .orders-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .order-title-wrapper {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .info-row {
+        grid-template-columns: 1fr;
+        row-gap: 5px;
+    }
+
+    .info-label {
+        margin-bottom: 2px;
+    }
+
+    .form-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+    }
+
+    .file-upload-wrapper {
+        margin-bottom: 10px;
+    }
+}
+
+/* Стиль для підсвічування коментаря */
+.comment-item.highlight {
+    animation: highlight-animation 3s;
+}
+
+@keyframes highlight-animation {
+    0% { background-color: var(--accent-secondary, rgba(0, 123, 255, 0.2)); }
+    100% { background-color: var(--background-tertiary); }
+}
+
+.spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+/* Стилі для сторінки замовлень */
+/* Загальні стилі списку замовлень */
+.orders-list-container {
+    padding: 0;
+}
+
+.orders-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background-color: var(--card-bg);
+    border-radius: 8px 8px 0 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.orders-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* Фільтри та сортування */
+.orders-filters {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 1rem 1.5rem;
+    background-color: var(--card-bg);
+    gap: 1rem;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.filter-group label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.filter-group select,
+.filter-group input {
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.search-group {
+    display: flex;
+    flex-grow: 1;
+    max-width: 300px;
+    margin-left: auto;
+}
+
+.search-input {
+    flex-grow: 1;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-right: none;
+    border-radius: 4px 0 0 4px;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+}
+
+.search-btn {
+    padding: 0.5rem 0.75rem;
+    background-color: var(--primary-color);
+    border: none;
+    border-radius: 0 4px 4px 0;
+    color: white;
+    cursor: pointer;
+}
+
+/* Статистика замовлень */
+.orders-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    background-color: var(--card-bg);
+}
+
+.stat-item {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 150px;
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    border-radius: 8px;
+    background-color: var(--card-bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.stat-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    margin-right: 0.75rem;
+    font-size: 1.25rem;
+}
+
+.stat-icon-new {
+    background-color: #ffd700;
+    color: #000;
+}
+
+.stat-icon-processing {
+    background-color: #1e90ff;
+    color: #fff;
+}
+
+.stat-icon-waiting {
+    background-color: #ff8c00;
+    color: #fff;
+}
+
+.stat-icon-completed {
+    background-color: #32cd32;
+    color: #fff;
+}
+
+.stat-icon-canceled {
+    background-color: #cccccc;
+    color: #fff;
+}
+
+.stat-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-number {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* Список замовлень */
+.orders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    padding: 1rem 1.5rem 1.5rem;
+    background-color: var(--card-bg);
+}
+
+@media (max-width: 768px) {
+    .orders-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Картка замовлення в списку */
+.order-card {
+    background-color: var(--card-bg-secondary);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.order-card-header {
+    padding: 0.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.order-service {
+    color: var(--primary-color);
+    font-size: 1rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.order-number {
+    font-size: 1rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.order-card-content {
+    padding: 1rem;
+}
+
+.order-info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.order-info-item {
+    display: flex;
+    margin-bottom: 0.75rem;
+    align-items: flex-start;
+}
+
+.order-info-label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    width: 100px;
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+}
+
+.order-info-value {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    flex-grow: 1;
+    overflow-wrap: break-word;
+    word-break: break-all;
+}
+
+.order-card-footer {
+    padding: 0.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border-color);
+}
+
+.order-date {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.order-details-link {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background-color: var(--primary-color);
+    color: var(--btn-text-color);
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+
+.order-details-link:hover {
+    background-color: var(--primary-color-dark);
+}
+
+/* Статуси замовлень */
+.status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.status-new {
+    background-color: #ffd700;
+    color: #000;
+}
+
+.status-processing {
+    background-color: #1e90ff;
+    color: #fff;
+}
+
+.status-in-progress {
+    background-color: #1e90ff;
+    color: #fff;
+}
+
+.status-completed {
+    background-color: #32cd32;
+    color: #fff;
+}
+
+.status-canceled {
+    background-color: #ff0000;
+    color: #fff;
+}
+
+.status-default {
+    background-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* Порожній стан */
+.no-orders {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--text-muted);
+    background-color: var(--card-bg);
+    border-radius: 8px;
+}
+
+.no-orders i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.no-orders p {
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+}
+
+/* Деталі замовлення */
+.order-details-container {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.order-details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.order-id {
+    font-size: 1.25rem;
+    font-weight: 500;
+}
+
+.order-details-content {
+    padding: 1.5rem;
+}
+
+.detail-section {
+    margin-bottom: 2rem;
+}
+
+.detail-section-title {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.detail-section-title i {
+    color: var(--primary-color);
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem 2rem;
+}
+
+@media (max-width: 768px) {
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.detail-item {
+    margin-bottom: 1rem;
+}
+
+.detail-label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+.detail-value {
+    color: var(--text-primary);
+    overflow-wrap: break-word;
+}
+
+.description-value {
+    background-color: var(--card-bg-secondary);
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+/* Файли */
+.files-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background-color: var(--card-bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.file-icon {
+    font-size: 1.5rem;
+    margin-right: 1rem;
+    color: var(--primary-color);
+}
+
+.file-info {
+    flex-grow: 1;
+}
+
+.file-name {
+    font-weight: 500;
+    word-break: break-word;
+}
+
+.file-actions {
+    margin-left: 1rem;
+}
+
+.file-download-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background-color: var(--primary-color);
+    color: var(--btn-text-color);
+    border-radius: 50%;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+
+.file-download-btn:hover {
+    background-color: var(--primary-color-dark);
+}
+
+/* Коментарі */
+.comments-section {
+    margin-bottom: 1rem;
+}
+
+.comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.comment-item {
+    background-color: var(--card-bg-secondary);
+    border-radius: 8px;
+    padding: 1rem;
+    border-left: 3px solid var(--primary-color);
+}
+
+.comment-item.own-comment {
+    border-left-color: #32cd32;
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.comment-user {
+    display: flex;
+    align-items: center;
+}
+
+.comment-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    margin-right: 0.75rem;
+}
+
+.comment-user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.comment-username {
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.admin-badge {
+    background-color: #ff6b6b;
+    color: white;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.comment-time {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.comment-actions {
+    display: flex;
+}
+
+.delete-comment-btn {
+    color: var(--danger-color);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    text-decoration: none;
+}
+
+.delete-comment-btn:hover {
+    background-color: var(--danger-color-light);
+}
+
+.comment-content {
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.no-comments {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.no-comments i {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Форма додавання коментаря */
+.add-comment-form {
+    background-color: var(--card-bg-secondary);
+    padding: 1.25rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.add-comment-form h4 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-weight: 500;
+    font-size: 1.1rem;
+}
+
+.add-comment-form textarea {
+    width: 100%;
+    min-height: 100px;
+    padding: 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    resize: vertical;
+}
+
+.add-comment-form textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.add-comment-form button {
+    background-color: var(--primary-color);
+    color: var(--btn-text-color);
+    border: none;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background-color 0.2s;
+}
+
+.add-comment-form button:hover {
+    background-color: var(--primary-color-dark);
+}
