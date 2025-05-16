@@ -150,6 +150,12 @@ if (isset($_GET['id'])) {
                 case 'in_progress':
                     $statusName = 'В роботі';
                     break;
+                case 'waiting':
+                    $statusName = 'Очікується';
+                    break;
+                case 'waiting_delivery':
+                    $statusName = 'Очікується поставки товару';
+                    break;
                 case 'completed':
                     $statusName = 'Завершено';
                     break;
@@ -210,6 +216,7 @@ if (isset($_GET['id'])) {
             'new' => 0,
             'in_progress' => 0,
             'waiting' => 0,
+            'waiting_delivery' => 0,
             'completed' => 0,
             'canceled' => 0
         ];
@@ -224,6 +231,9 @@ if (isset($_GET['id'])) {
                     break;
                 case 'Очікується':
                     $stats['waiting'] = $stat['count'];
+                    break;
+                case 'Очікується поставки товару':
+                    $stats['waiting_delivery'] = $stat['count'];
                     break;
                 case 'Завершено':
                 case 'Виконано':
@@ -339,6 +349,10 @@ function getStatusClass($status) {
             return 'status-completed';
         case 'Завершено':
             return 'status-completed';
+        case 'Очікується поставки товару':
+            return 'status-waiting-delivery';
+        case 'Очікується':
+            return 'status-waiting'; // Змінено з status-default на status-waiting
         case 'Скасовано':
         case 'Не можливо виконати':
             return 'status-canceled';
@@ -356,6 +370,8 @@ function getStatusIcon($status) {
             return 'bi-gear';
         case 'waiting':
             return 'bi-clock';
+        case 'waiting_delivery':
+            return 'bi-truck';
         case 'completed':
             return 'bi-check-circle';
         case 'canceled':
@@ -374,6 +390,8 @@ function getStatusName($statusCode) {
             return 'В роботі';
         case 'waiting':
             return 'Очікується';
+        case 'waiting_delivery':
+            return 'Очікується поставки товару';
         case 'completed':
             return 'Завершено';
         case 'canceled':
@@ -392,904 +410,1094 @@ if (!function_exists('hasAdminAccess')) {
 }
 ?>
 
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="uk" data-theme="<?php echo $currentTheme; ?>">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-        <title><?php echo isset($orderDetails) ? "Замовлення #" . $orderDetails['id'] : "Мої замовлення"; ?> - Lagodi Service</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><?php echo isset($orderDetails) ? "Замовлення #" . $orderDetails['id'] : "Мої замовлення"; ?> - Lagodi Service</title>
 
-        <!-- Блокуємо рендеринг сторінки до встановлення теми -->
-        <script>
-            (function() {
-                const storedTheme = localStorage.getItem('theme') || '<?php echo $currentTheme; ?>';
-                document.documentElement.setAttribute('data-theme', storedTheme);
-            })();
-        </script>
+    <!-- Блокуємо рендеринг сторінки до встановлення теми -->
+    <script>
+        (function() {
+            const storedTheme = localStorage.getItem('theme') || '<?php echo $currentTheme; ?>';
+            document.documentElement.setAttribute('data-theme', storedTheme);
+        })();
+    </script>
 
-        <!-- CSS файли -->
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-        <link rel="stylesheet" href="../../style/dahm/user_dashboard.css">
-        <link rel="stylesheet" href="../../style/dahm/orders.css">
+    <!-- CSS файли -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../../style/dahm/user_dashboard.css">
+    <link rel="stylesheet" href="../../style/dahm/orders.css">
 
-        <style>
-            /* Стилі для фільтрів */
+    <style>
+        /* Стилі для фільтрів */
+        .filters-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Стилі для випадаючих списків - адаптивні під темну та світлу теми */
+        .filter-group {
+            display: flex;
+            min-width: 180px;
+            margin-bottom: 0;
+        }
+
+        .filter-group label {
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+            color: var(--text-secondary, #888);
+        }
+
+        /* Основний стиль для селектів */
+        .filter-group select {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background-color: transparent; /* Прозорий фон */
+            color: var(--text-primary); /* Колір тексту від теми */
+            min-width: 150px;
+            appearance: none;
+            background-position: right 12px center;
+            background-repeat: no-repeat;
+            background-size: 12px;
+        }
+
+        /* Стрілка вниз для селектів (адаптивна для обох тем) */
+        .filter-group select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+        }
+
+        /* Світла тема - додаткові стилі */
+        :root[data-theme="light"] .filter-group select {
+            background-color: #ffffff;
+            color: #333333;
+            border-color: #d1d5db;
+        }
+
+        /* Темна тема - додаткові стилі */
+        :root[data-theme="dark"] .filter-group select {
+            background-color: #333333;
+            color: #e2e8f0;
+            border-color: #4a5568;
+        }
+
+        /* Стилі для іконок у фільтрах */
+        .filter-group::before {
+            content: "";
+            position: absolute;
+            left: 10px;
+            bottom: 12px;
+            width: 16px;
+            height: 16px;
+            background-repeat: no-repeat;
+            background-position: center;
+            z-index: 1;
+        }
+
+        /* Адаптивні іконки для обох тем */
+        :root[data-theme="light"] .filter-group::before {
+            filter: brightness(0) opacity(0.6);
+        }
+
+        :root[data-theme="dark"] .filter-group::before {
+            filter: brightness(0) invert(1) opacity(0.6);
+        }
+
+        /* Іконки для фільтрів статусів */
+        .filter-status::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z'/%3E%3Cpath d='M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z'/%3E%3C/svg%3E");
+        }
+
+        .filter-sort::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M10.082 5.629 9.664 7H8.598l1.789-5.332h1.234L13.402 7h-1.12l-.419-1.371h-1.781zm1.57-.785L11 2.687h-.047l-.652 2.157h1.351z'/%3E%3Cpath d='M12.96 14H9.028v-.691l2.579-3.72v-.054H9.098v-.867h3.785v.691l-2.567 3.72v.054h2.645V14zM4.5 2.5a.5.5 0 0 0-1 0v9.793l-1.146-1.147a.5.5 0 0 0-.708.708l2 1.999.007.007a.497.497 0 0 0 .7-.006l2-2a.5.5 0 0 0-.707-.708L4.5 12.293V2.5z'/%3E%3C/svg%3E");
+        }
+
+        /* Стилі для пошуку */
+        .search-group {
+            display: flex;
+            flex-grow: 1;
+            min-width: 200px;
+            position: relative;
+        }
+
+        .search-input {
+            flex-grow: 1;
+            padding: 8px 12px 8px 35px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: transparent;
+            color: var(--text-primary);
+        }
+
+        /* Адаптивна іконка пошуку */
+        .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+
+        /* Завжди видима лупа на світлій темі */
+        :root[data-theme="light"] .search-icon {
+            color: #333 !important; /* Темніший колір для світлої теми */
+        }
+
+        :root[data-theme="dark"] .search-icon {
+            color: #fff !important; /* Світліший колір для темної теми */
+        }
+
+        /* Додаткові стилі для світлої теми */
+        :root[data-theme="light"] .search-input {
+            background-color: #ffffff;
+            color: #333333;
+            border-color: #d1d5db;
+        }
+
+        /* Додаткові стилі для темної теми */
+        :root[data-theme="dark"] .search-input {
+            background-color: #333333;
+            color: #e2e8f0;
+            border-color: #4a5568;
+        }
+
+        /* Стилі для кнопки пошуку залежно від теми */
+        :root[data-theme="light"] .search-btn {
+            background-color: #3498db;
+            color: white;
+        }
+
+        :root[data-theme="dark"] .search-btn {
+            background-color: #2980b9;
+            color: white;
+        }
+
+        :root[data-theme="light"] .search-btn:hover {
+            background-color: #2980b9;
+        }
+
+        :root[data-theme="dark"] .search-btn:hover {
+            background-color: #3498db;
+        }
+
+        .search-btn {
+            border: none;
+            border-radius: 6px;
+            padding: 8px 15px;
+            cursor: pointer;
+            margin-left: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
+
+        /* Забезпечуємо видимість іконки пошуку в кнопці */
+        .search-btn i {
+            color: #ffffff !important; /* Білий колір іконки в кнопці пошуку */
+        }
+
+        .clear-filters-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #e74c3c;
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .clear-filters-btn:hover {
+            background-color: rgba(231, 76, 60, 0.1);
+        }
+
+        /* Повідомлення про неможливість коментування */
+        .comments-disabled-notice {
+            background-color: rgba(221, 44, 0, 0.1);
+            color: #cc3c2e;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 6px;
+            border: 1px solid rgba(221, 44, 0, 0.2);
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+        }
+
+        .comments-disabled-notice i {
+            margin-right: 10px;
+            font-size: 1.2rem;
+        }
+
+        /* Покращення дизайну карток замовлень */
+        .order-card {
+            transition: transform 0.2s, box-shadow 0.3s;
+        }
+
+        .order-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .order-card-header {
+            background-color: rgba(0, 0, 0, 0.05);
+            border-radius: 8px 8px 0 0;
+        }
+
+        .order-card-footer {
+            background-color: rgba(0, 0, 0, 0.02);
+        }
+
+        .order-details-link {
+            transition: background-color 0.2s;
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+
+        .order-details-link:hover {
+            background-color: rgba(52, 152, 219, 0.1);
+        }
+
+        /* Покращення для статистики замовлень */
+        .orders-stats {
+            margin-bottom: 25px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: space-between;
+        }
+
+        .stat-item {
+            flex: 1;
+            min-width: 150px;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+        }
+
+        .stat-icon-new {
+            background-color: rgba(243, 156, 18, 0.2);
+            color: #f39c12;
+        }
+
+        .stat-icon-processing,
+        .stat-icon-in-progress {
+            background-color: rgba(52, 152, 219, 0.2);
+            color: #3498db;
+        }
+
+        .stat-icon-waiting {
+            background-color: rgba(142, 68, 173, 0.2);
+            color: #8e44ad;
+        }
+
+        .stat-icon-waiting-delivery {
+            background-color: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .stat-icon-completed {
+            background-color: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+        }
+
+        .stat-icon-canceled {
+            background-color: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+        }
+
+        .stat-content {
+            flex: 1;
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        /* Стилі для сповіщень */
+        .notification {
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 300px;
+            max-width: 90%;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+
+        .notification.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .notification-success {
+            background-color: #2ecc71;
+        }
+
+        .notification-error {
+            background-color: #e74c3c;
+        }
+
+        .notification-info {
+            background-color: #3498db;
+        }
+
+        .notification i {
+            font-size: 1.2rem;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        /* Стиль для сповіщення про створення замовлення */
+        .order-created-banner {
+            background-color: rgba(46, 204, 113, 0.15);
+            border-left: 4px solid #2ecc71;
+            padding: 16px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            color: var(--text-primary);
+        }
+
+        .order-created-banner i {
+            color: #2ecc71;
+            font-size: 1.5rem;
+            margin-right: 12px;
+        }
+
+        .order-created-banner strong {
+            font-weight: 600;
+        }
+
+        /* Кнопка "Не має замовлень" */
+        .no-orders {
+            text-align: center;
+            padding: 40px 20px;
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            border: 1px dashed var(--border-color);
+            margin-top: 30px;
+        }
+
+        .no-orders i {
+            font-size: 3rem;
+            color: #888;
+            margin-bottom: 15px;
+            opacity: 0.6;
+        }
+
+        .no-orders p {
+            font-size: 1.2rem;
+            color: #888;
+            margin-bottom: 20px;
+        }
+
+        .no-orders .create-order-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+            font-size: 0.95rem; /* Зменшено розмір шрифту */
+        }
+
+        .no-orders .create-order-btn:hover {
+            background-color: var(--primary-color-dark, #2980b9);
+            transform: translateY(-2px);
+        }
+
+        /* Стилі для статусів замовлень */
+        .status-waiting-delivery {
+            background-color: #ff9800;
+            color: white;
+        }
+
+        /* Базовий стиль для статусу "Очікується" */
+        .status-waiting {
+            background-color: #8e44ad; /* Фіолетовий колір для статусу "Очікується" */
+            color: white;
+        }
+
+        /* Стиль для статусу за замовчуванням, який адаптується до теми */
+        .status-default {
+            border: 1px solid var(--border-color);
+        }
+
+        /* Світла тема: темний текст на світлому фоні */
+        :root[data-theme="light"] .status-default {
+            background-color: #f8f9fa;
+            color: #333333;
+            border-color: #dee2e6;
+        }
+
+        /* Темна тема: світлий текст на темному фоні */
+        :root[data-theme="dark"] .status-default {
+            background-color: #343a40;
+            color: #ffffff;
+            border-color: #495057;
+        }
+
+        /* Поліпшений стиль для всіх бейджів статусів */
+        .status-badge {
+            display: inline-block;
+            padding: 6px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+        }
+
+        /* Нові стилі для елементів інтерфейсу в залежності від теми */
+        /* 1. Стилі для кнопки "Показати більше коментарів" */
+        .show-more-btn {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            padding: 8px 15px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s ease, color 0.3s ease, background-color 0.3s ease;
+        }
+
+        /* Світла тема для кнопки "Показати більше коментарів" */
+        :root[data-theme="light"] .show-more-btn {
+            color: #333333;
+            border-color: #dee2e6;
+        }
+
+        :root[data-theme="light"] .show-more-btn i {
+            color: var(--primary-color);
+        }
+
+        /* Темна тема для кнопки "Показати більше коментарів" */
+        :root[data-theme="dark"] .show-more-btn {
+            color: #ffffff;
+            border-color: #4a5568;
+        }
+
+        :root[data-theme="dark"] .show-more-btn i {
+            color: var(--primary-color);
+        }
+
+        /* Ефект при наведенні для кнопки "Показати більше коментарів" */
+        .show-more-btn:hover {
+            background-color: rgba(52, 152, 219, 0.05);
+            border-color: var(--primary-color);
+        }
+
+        /* 2. Стилі для кнопки "Відправити" - оновлені стилі */
+        .submit-btn {
+            border: none;
+            border-radius: 6px;
+            padding: 10px 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease, background-color 0.3s ease, color 0.3s ease;
+        }
+
+        /* Світла тема для кнопки "Відправити" - з конкретним кольором фону */
+        :root[data-theme="light"] .submit-btn {
+            background-color: #3498db !important; /* Сильніший синій для світлої теми */
+            color: white !important;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        :root[data-theme="light"] .submit-btn i {
+            color: white !important;
+        }
+
+        /* Темна тема для кнопки "Відправити" - з конкретним кольором фону */
+        :root[data-theme="dark"] .submit-btn {
+            background-color: #2980b9 !important; /* Темніший синій для темної теми */
+            color: white !important;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        :root[data-theme="dark"] .submit-btn i {
+            color: white !important;
+        }
+
+        /* Ефект при наведенні для кнопки "Відправити" */
+        .submit-btn:hover {
+            background-color: #2980b9 !important; /* Для світлої теми */
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        :root[data-theme="dark"] .submit-btn:hover {
+            background-color: #3498db !important; /* Для темної теми */
+        }
+
+        /* Ефект при натисканні для кнопки "Відправити" */
+        .submit-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 3. Стилі для блоку файлу */
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            background-color: transparent;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s ease, color 0.3s ease, background-color 0.3s ease;
+        }
+
+        /* Світла тема для блоку файлу */
+        :root[data-theme="light"] .file-item {
+            color: #333333;
+            border-color: #dee2e6;
+        }
+
+        :root[data-theme="light"] .file-item i {
+            color: var(--primary-color);
+        }
+
+        :root[data-theme="light"] .file-name {
+            color: #333333;
+        }
+
+        /* Темна тема для блоку файлу */
+        :root[data-theme="dark"] .file-item {
+            color: #ffffff;
+            border-color: #4a5568;
+        }
+
+        :root[data-theme="dark"] .file-item i {
+            color: var(--primary-color);
+        }
+
+        :root[data-theme="dark"] .file-name {
+            color: #ffffff;
+        }
+
+        /* Ефект при наведенні для блоку файлу */
+        .file-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            transform: translateY(-2px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Кнопка завантаження файлу */
+        .file-download-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease, color 0.3s ease, background-color 0.3s ease;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+
+        /* Світла тема для кнопки завантаження */
+        :root[data-theme="light"] .file-download-btn {
+            color: var(--primary-color);
+        }
+
+        /* Темна тема для кнопки завантаження */
+        :root[data-theme="dark"] .file-download-btn {
+            color: var(--primary-color);
+        }
+
+        /* Ефект при наведенні для кнопки завантаження */
+        .file-download-btn:hover {
+            background-color: var(--primary-color);
+            color: white !important;
+        }
+
+        /* Перезаписуємо іконку при наведенні для будь-якої теми */
+        .file-download-btn:hover i {
+            color: white !important;
+        }
+
+        /* Плавний перехід для зміни стилів при зміні теми */
+        .theme-transition {
+            transition: color 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        /* Глобальні іконки та текст для обох тем */
+        :root[data-theme="light"] i:not(.file-download-btn:hover i) {
+            transition: color 0.3s ease;
+        }
+
+        :root[data-theme="dark"] i:not(.file-download-btn:hover i) {
+            transition: color 0.3s ease;
+        }
+
+        @media (max-width: 768px) {
             .filters-form {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 15px;
-                align-items: center;
-                margin-bottom: 20px;
-                padding: 15px;
-                background-color: var(--card-bg);
-                border-radius: 8px;
-                border: 1px solid var(--border-color);
-            }
-
-            /* Стилі для випадаючих списків - адаптивні під темну та світлу теми */
-            .filter-group {
-                display: flex;
                 flex-direction: column;
-                min-width: 180px;
-                position: relative;
-                margin-bottom: 0;
+                align-items: stretch;
             }
 
-            .filter-group label {
-                font-size: 0.85rem;
-                margin-bottom: 5px;
-                color: var(--text-secondary, #888);
-            }
-
-            /* Основний стиль для селектів */
-            .filter-group select {
-                padding: 8px 12px;
-                border-radius: 6px;
-                border: 1px solid var(--border-color);
-                background-color: transparent; /* Прозорий фон */
-                color: var(--text-primary); /* Колір тексту від теми */
-                min-width: 150px;
-                appearance: none;
-                padding-left: 35px; /* Відступ для іконки */
-                background-position: right 12px center;
-                background-repeat: no-repeat;
-                background-size: 12px;
-            }
-
-            /* Стрілка вниз для селектів (адаптивна для обох тем) */
-            .filter-group select {
-                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
-            }
-
-            /* Світла тема - додаткові стилі */
-            :root[data-theme="light"] .filter-group select {
-                background-color: #ffffff;
-                color: #333333;
-                border-color: #d1d5db;
-            }
-
-            /* Темна тема - додаткові стилі */
-            :root[data-theme="dark"] .filter-group select {
-                background-color: #2d3748;
-                color: #e2e8f0;
-                border-color: #4a5568;
-            }
-
-            /* Стилі для іконок у фільтрах */
-            .filter-group::before {
-                content: "";
-                position: absolute;
-                left: 10px;
-                bottom: 12px;
-                width: 16px;
-                height: 16px;
-                background-repeat: no-repeat;
-                background-position: center;
-                z-index: 1;
-            }
-
-            /* Адаптивні іконки для обох тем */
-            :root[data-theme="light"] .filter-group::before {
-                filter: brightness(0) opacity(0.6);
-            }
-
-            :root[data-theme="dark"] .filter-group::before {
-                filter: brightness(0) invert(1) opacity(0.6);
-            }
-
-            /* Іконки для фільтрів статусів */
-            .filter-status::before {
-                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z'/%3E%3Cpath d='M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z'/%3E%3C/svg%3E");
-            }
-
-            .filter-sort::before {
-                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M10.082 5.629 9.664 7H8.598l1.789-5.332h1.234L13.402 7h-1.12l-.419-1.371h-1.781zm1.57-.785L11 2.687h-.047l-.652 2.157h1.351z'/%3E%3Cpath d='M12.96 14H9.028v-.691l2.579-3.72v-.054H9.098v-.867h3.785v.691l-2.567 3.72v.054h2.645V14zM4.5 2.5a.5.5 0 0 0-1 0v9.793l-1.146-1.147a.5.5 0 0 0-.708.708l2 1.999.007.007a.497.497 0 0 0 .7-.006l2-2a.5.5 0 0 0-.707-.708L4.5 12.293V2.5z'/%3E%3C/svg%3E");
-            }
-
-            /* Стилі для пошуку */
+            .filter-group,
             .search-group {
-                display: flex;
-                flex-grow: 1;
-                min-width: 200px;
-                position: relative;
+                min-width: 100%;
             }
 
-            .search-input {
-                flex-grow: 1;
-                padding: 8px 12px 8px 35px;
-                border: 1px solid var(--border-color);
-                border-radius: 6px;
-                background-color: transparent;
-                color: var(--text-primary);
-            }
-
-            /* Адаптивна іконка пошуку */
-            .search-icon {
-                position: absolute;
-                left: 10px;
-                top: 50%;
-                transform: translateY(-50%);
-                pointer-events: none;
-            }
-
-            /* Завжди видима лупа на світлій темі */
-            :root[data-theme="light"] .search-icon {
-                color: #333 !important; /* Темніший колір для світлої теми */
-            }
-
-            :root[data-theme="dark"] .search-icon {
-                color: #fff !important; /* Світліший колір для темної теми */
-            }
-
-            /* Для кнопки пошуку */
-            .search-btn i {
-                color: #ffffff !important; /* Білий колір іконки в кнопці пошуку */
-            }
-            .search-btn[data-theme="dark"] .search-icon {
-                color: #fff !important; /* Світліший колір для темної теми */
-            }
-
-            /* Додаткові стилі для світлої теми */
-            :root[data-theme="light"] .search-input {
-                background-color: #ffffff;
-                color: #333333;
-                border-color: #d1d5db;
-            }
-
-            /* Додаткові стилі для темної теми */
-            :root[data-theme="dark"] .search-input {
-                background-color: #2d3748;
-                color: #e2e8f0;
-                border-color: #4a5568;
-            }
-
-            .search-btn {
-                background-color: var(--primary-color);
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 15px;
-                cursor: pointer;
-                margin-left: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: background-color 0.2s;
-            }
-
-            .search-btn:hover {
-                background-color: var(--primary-color-dark, #2980b9);
-            }
-
-            .clear-filters-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                color: #e74c3c;
-                text-decoration: none;
-                padding: 6px 12px;
-                border-radius: 6px;
-                font-weight: 500;
-                transition: all 0.2s;
-            }
-
-            .clear-filters-btn:hover {
-                background-color: rgba(231, 76, 60, 0.1);
-            }
-
-            /* Повідомлення про неможливість коментування */
-            .comments-disabled-notice {
-                background-color: rgba(221, 44, 0, 0.1);
-                color: #cc3c2e;
-                padding: 15px;
-                margin-top: 15px;
-                border-radius: 6px;
-                border: 1px solid rgba(221, 44, 0, 0.2);
-                display: flex;
-                align-items: center;
-                font-weight: 500;
-            }
-
-            .comments-disabled-notice i {
-                margin-right: 10px;
-                font-size: 1.2rem;
-            }
-
-            /* Покращення дизайну карток замовлень */
-            .order-card {
-                transition: transform 0.2s, box-shadow 0.3s;
-            }
-
-            .order-card:hover {
-                transform: translateY(-3px);
-                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            }
-
-            .order-card-header {
-                background-color: rgba(0, 0, 0, 0.05);
-                border-radius: 8px 8px 0 0;
-            }
-
-            .order-card-footer {
-                background-color: rgba(0, 0, 0, 0.02);
-            }
-
-            .order-details-link {
-                transition: background-color 0.2s;
-                padding: 6px 12px;
-                border-radius: 6px;
-            }
-
-            .order-details-link:hover {
-                background-color: rgba(52, 152, 219, 0.1);
-            }
-
-            /* Покращення для статистики замовлень */
             .orders-stats {
-                margin-bottom: 25px;
-                display: flex;
-                flex-wrap: wrap;
-                gap: 15px;
-                justify-content: space-between;
+                flex-direction: column;
             }
 
             .stat-item {
-                flex: 1;
-                min-width: 150px;
-                background-color: var(--card-bg);
-                border-radius: 8px;
-                padding: 15px;
-                display: flex;
-                align-items: center;
-                gap: 15px;
-                border: 1px solid var(--border-color);
-                transition: transform 0.2s, box-shadow 0.2s;
+                min-width: 100%;
             }
+        }
 
-            .stat-item:hover {
-                transform: translateY(-3px);
-                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            }
+        <?php if (isset($orderDetails)): ?>
+        /* Загальний стиль для контейнера деталей замовлення */
+        .order-details-container {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
 
-            .stat-icon {
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 1.3rem;
-            }
+        /* Заголовок з номером замовлення */
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
 
-            .stat-icon-new {
-                background-color: rgba(243, 156, 18, 0.2);
-                color: #f39c12;
-            }
+        .order-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
 
-            .stat-icon-processing,
-            .stat-icon-in-progress {
-                background-color: rgba(52, 152, 219, 0.2);
-                color: #3498db;
-            }
+        .status-badge {
+            display: inline-block;
+            padding: 6px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
 
-            .stat-icon-waiting {
-                background-color: rgba(142, 68, 173, 0.2);
-                color: #8e44ad;
-            }
+        .status-new {
+            color: white;
+        }
 
-            .stat-icon-completed {
-                background-color: rgba(46, 204, 113, 0.2);
-                color: #2ecc71;
-            }
+        .status-processing,
+        .status-in-progress {
+            color: white;
+        }
 
-            .stat-icon-canceled {
-                background-color: rgba(231, 76, 60, 0.2);
-                color: #e74c3c;
-            }
+        .status-completed {
+            color: white;
+        }
 
-            .stat-content {
-                flex: 1;
-            }
+        .status-canceled {
+            color: white;
+        }
 
-            .stat-number {
-                font-size: 1.5rem;
-                font-weight: 600;
-                color: var(--text-primary);
-            }
+        /* Рядки з деталями замовлення */
+        .detail-row {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            background-color: transparent !important;
+        }
 
-            .stat-label {
-                font-size: 0.9rem;
-                color: #888;
-            }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
 
-            /* Стилі для сповіщень */
-            .notification {
-                position: fixed;
-                top: 15px;
-                left: 50%;
-                transform: translateX(-50%);
-                padding: 12px 20px;
-                border-radius: 8px;
-                color: white;
-                font-weight: 500;
-                box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
-                z-index: 1000;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                min-width: 300px;
-                max-width: 90%;
-                opacity: 0;
-                visibility: hidden;
-                transition: opacity 0.3s, visibility 0.3s;
-            }
+        .detail-col {
+            padding: 12px 20px;
+            flex: 1;
+            background-color: transparent !important;
+        }
 
-            .notification.show {
-                opacity: 1;
-                visibility: visible;
-            }
+        .detail-col:first-child {
+            border-right: 1px solid var(--border-color);
+        }
 
-            .notification-success {
-                background-color: #2ecc71;
-            }
+        .detail-label {
+            font-weight: 500;
+            color: #888;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
 
-            .notification-error {
-                background-color: #e74c3c;
-            }
+        .detail-value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
 
-            .notification-info {
-                background-color: #3498db;
-            }
+        .detail-value.empty {
+            color: #999;
+            font-style: italic;
+        }
 
-            .notification i {
-                font-size: 1.2rem;
-            }
+        /* Стиль для опису */
+        .description-section {
+            padding: 15px 20px;
+            border-top: 1px solid var(--border-color);
+        }
 
-            .notification-content {
-                flex: 1;
-            }
+        .description-label {
+            font-weight: 500;
+            color: #888;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
 
-            /* Стиль для сповіщення про створення замовлення */
-            .order-created-banner {
-                background-color: rgba(46, 204, 113, 0.15);
-                border-left: 4px solid #2ecc71;
-                padding: 16px;
-                margin-bottom: 20px;
-                border-radius: 6px;
-                display: flex;
-                align-items: center;
-                color: var(--text-primary);
-            }
+        .description-label i {
+            color: var(--primary-color);
+        }
 
-            .order-created-banner i {
-                color: #2ecc71;
-                font-size: 1.5rem;
-                margin-right: 12px;
-            }
+        .description-text {
+            padding: 15px;
+            line-height: 1.5;
+            background-color: transparent !important;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary); /* Текст залежить від теми */
+        }
 
-            .order-created-banner strong {
-                font-weight: 600;
-            }
+        /* Стилі для блоків опису та коментарів */
+        :root[data-theme="light"] .description-text {
+            color: #333333; /* Темний колір тексту для світлої теми */
+        }
 
-            /* Кнопка "Не має замовлень" */
-            .no-orders {
-                text-align: center;
-                padding: 40px 20px;
-                background-color: var(--card-bg);
-                border-radius: 10px;
-                border: 1px dashed var(--border-color);
-                margin-top: 30px;
-            }
+        :root[data-theme="dark"] .description-text {
+            color: #e2e8f0; /* Світлий колір тексту для темної теми */
+        }
 
-            .no-orders i {
-                font-size: 3rem;
-                color: #888;
-                margin-bottom: 15px;
-                opacity: 0.6;
-            }
+        :root[data-theme="light"] .comment-header,
+        :root[data-theme="light"] .comment-content {
+            color: #333333; /* Темний колір тексту для світлої теми */
+        }
 
-            .no-orders p {
-                font-size: 1.2rem;
-                color: #888;
-                margin-bottom: 20px;
-            }
+        :root[data-theme="dark"] .comment-header,
+        :root[data-theme="dark"] .comment-content {
+            color: #e2e8f0; /* Світлий колір тексту для темної теми */
+        }
 
-            .no-orders .create-order-btn {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                background-color: var(--primary-color);
-                color: white;
-                padding: 10px 20px;
-                border-radius: 6px;
-                text-decoration: none;
-                font-weight: 500;
-                transition: all 0.2s;
-                font-size: 0.95rem; /* Зменшено розмір шрифту */
-            }
+        /* Стилі для часу коментаря */
+        :root[data-theme="light"] .comment-time {
+            color: #666666; /* Темно-сірий для світлої теми */
+        }
 
-            .no-orders .create-order-btn:hover {
-                background-color: var(--primary-color-dark, #2980b9);
-                transform: translateY(-2px);
-            }
+        :root[data-theme="dark"] .comment-time {
+            color: #aaaaaa; /* Світло-сірий для темної теми */
+        }
 
-            @media (max-width: 768px) {
-                .filters-form {
-                    flex-direction: column;
-                    align-items: stretch;
-                }
+        /* Плавний перехід для зміни кольору тексту */
+        .theme-transition {
+            transition: color 0.3s ease;
+        }
 
-                .filter-group,
-                .search-group {
-                    min-width: 100%;
-                }
+        .description-text.empty {
+            color: #999;
+            font-style: italic;
+        }
 
-                .orders-stats {
-                    flex-direction: column;
-                }
+        /* Файли */
+        .files-section {
+            padding: 15px 20px;
+            border-top: 1px solid var(--border-color);
+            background-color: transparent;
+        }
 
-                .stat-item {
-                    min-width: 100%;
-                }
-            }
+        .files-label, .comments-label {
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            color: #888;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
 
-            <?php if (isset($orderDetails)): ?>
-            /* Загальний стиль для контейнера деталей замовлення */
-            .order-details-container {
-                background-color: var(--card-bg);
-                border-radius: 10px;
-                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-                overflow: hidden;
-                margin-bottom: 20px;
-                border: 1px solid var(--border-color);
-            }
+        .files-label i, .comments-label i {
+            margin-right: 8px;
+            color: var(--primary-color);
+        }
 
-            /* Заголовок з номером замовлення */
-            .order-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 15px 20px;
-                border-bottom: 1px solid var(--border-color);
-            }
+        .files-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 10px;
+        }
 
-            .order-title {
-                font-size: 1.3rem;
-                font-weight: 600;
-                color: var(--primary-color);
-            }
+        /* Коментарі */
+        .comments-section {
+            padding: 15px 20px;
+            border-top: 1px solid var(--border-color);
+        }
 
-            .status-badge {
-                display: inline-block;
-                padding: 6px 15px;
-                border-radius: 20px;
-                font-size: 0.9rem;
-                font-weight: 600;
-                text-align: center;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
+        .comments-list {
+            margin: 15px 0 5px 0;
+        }
 
-            .status-new {
-                background-color: #f39c12;
-                color: white;
-            }
+        .comment-item {
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
 
-            .status-processing,
-            .status-in-progress {
-                background-color: #3498db;
-                color: white;
-            }
+        .comment-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
 
-            .status-completed {
-                background-color: #2ecc71;
-                color: white;
-            }
+        /* Власні коментарі */
+        .comment-item.own-comment {
+            border-left: 3px solid var(--primary-color);
+        }
 
-            .status-canceled {
-                background-color: #e74c3c;
-                color: white;
-            }
+        /* Коментарі адміна */
+        .comment-item.admin-comment {
+            border-left: 3px solid #e74c3c;
+        }
 
-            /* Рядки з деталями замовлення */
+        .comment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background-color: rgba(0, 0, 0, 0.05);
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary); /* Колір тексту залежить від теми */
+        }
+
+        .comment-user {
+            display: flex;
+            align-items: center;
+        }
+
+        .comment-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            margin-right: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .admin-comment .comment-avatar {
+            background-color: #e74c3c;
+        }
+
+        .comment-user-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .comment-username {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            color: var(--text-primary); /* Колір тексту залежить від теми */
+        }
+
+        .admin-badge {
+            background-color: #e74c3c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .comment-time {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .comment-actions a {
+            color: #e74c3c;
+            text-decoration: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .comment-actions a:hover {
+            background-color: rgba(231, 76, 60, 0.1);
+        }
+
+        .comment-content {
+            padding: 15px;
+            line-height: 1.5;
+            color: var(--text-primary); /* Колір тексту залежить від теми */
+        }
+
+        .no-comments {
+            text-align: center;
+            padding: 30px;
+            color: #888;
+            background-color: rgba(0, 0, 0, 0.03);
+            border-radius: 8px;
+            border: 1px dashed var(--border-color);
+        }
+
+        .no-comments i {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            display: block;
+            opacity: 0.6;
+        }
+
+        .comment-form {
+            margin-top: 20px;
+            background-color: rgba(0, 0, 0, 0.03);
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+        }
+
+        .comment-form-header {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+
+        .comment-form-header i {
+            color: var(--primary-color);
+            margin-right: 8px;
+        }
+
+        .comment-form textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            min-height: 100px;
+            margin-bottom: 15px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .comment-form textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+        }
+
+        /* Кнопка "Показати більше коментарів" */
+        .show-more-comments {
+            display: flex;
+            justify-content: center;
+            margin: 5px 0 20px 0;
+        }
+
+        .comment-item.hidden-comment {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
             .detail-row {
-                display: flex;
-                border-bottom: 1px solid var(--border-color);
-                background-color: transparent !important;
-            }
-
-            .detail-row:last-child {
-                border-bottom: none;
-            }
-
-            .detail-col {
-                padding: 12px 20px;
-                flex: 1;
-                background-color: transparent !important;
-            }
-
-            .detail-col:first-child {
-                border-right: 1px solid var(--border-color);
-            }
-
-            .detail-label {
-                font-weight: 500;
-                color: #888;
-                margin-bottom: 5px;
-                font-size: 0.9rem;
-            }
-
-            .detail-value {
-                color: var(--text-primary);
-                font-weight: 500;
-            }
-
-            .detail-value.empty {
-                color: #999;
-                font-style: italic;
-            }
-
-            /* Стиль для опису */
-            .description-section {
-                padding: 15px 20px;
-                border-top: 1px solid var(--border-color);
-            }
-
-            .description-label {
-                font-weight: 500;
-                color: #888;
-                margin-bottom: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-
-            .description-label i {
-                color: var(--primary-color);
-            }
-
-            .description-text {
-                padding: 15px;
-                line-height: 1.5;
-                background-color: transparent !important;
-                border-radius: 6px;
-                border: 1px solid var(--border-color);
-            }
-
-            .description-text.empty {
-                color: #999;
-                font-style: italic;
-            }
-
-            /* Файли */
-            .files-section {
-                padding: 15px 20px;
-                border-top: 1px solid var(--border-color);
-                background-color: transparent;
-            }
-
-            .files-label, .comments-label {
-                display: flex;
-                align-items: center;
-                font-weight: 500;
-                color: #888;
-                margin-bottom: 15px;
-                font-size: 1.1rem;
-            }
-
-            .files-label i, .comments-label i {
-                margin-right: 8px;
-                color: var(--primary-color);
-            }
-
-            .files-list {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-                gap: 10px;
-            }
-
-            .file-item {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 10px 12px;
-                background-color: transparent;
-                border-radius: 6px;
-                border: 1px solid var(--border-color);
-                transition: all 0.2s ease;
-            }
-
-            .file-item:hover {
-                background-color: rgba(255, 255, 255, 0.05);
-                transform: translateY(-2px);
-                box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
-            }
-
-            .file-item i {
-                color: var(--primary-color);
-                margin-right: 10px;
-                font-size: 1.2rem;
-            }
-
-            .file-name {
-                flex-grow: 1;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-
-            .file-download-btn {
-                color: var(--primary-color);
-                background: none;
-                border: none;
-                cursor: pointer;
-                width: 32px;
-                height: 32px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 50%;
-                transition: all 0.2s;
-            }
-
-            .file-download-btn:hover {
-                background-color: var(--primary-color);
-                color: white;
-            }
-
-            /* Коментарі */
-            .comments-section {
-                padding: 15px 20px;
-                border-top: 1px solid var(--border-color);
-            }
-
-            .comments-list {
-                margin: 15px 0 5px 0;
-            }
-
-            .comment-item {
-                margin-bottom: 15px;
-                border: 1px solid var(--border-color);
-                border-radius: 8px;
-                overflow: hidden;
-                transition: transform 0.2s, box-shadow 0.2s;
-            }
-
-            .comment-item:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            }
-
-            /* Власні коментарі */
-            .comment-item.own-comment {
-                border-left: 3px solid var(--primary-color);
-            }
-
-            /* Коментарі адміна */
-            .comment-item.admin-comment {
-                border-left: 3px solid #e74c3c;
-            }
-
-            .comment-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 10px 15px;
-                background-color: rgba(0, 0, 0, 0.05);
-                border-bottom: 1px solid var(--border-color);
-            }
-
-            .comment-user {
-                display: flex;
-                align-items: center;
-            }
-
-            .comment-avatar {
-                width: 36px;
-                height: 36px;
-                border-radius: 50%;
-                background-color: var(--primary-color);
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: 600;
-                margin-right: 10px;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
-
-            .admin-comment .comment-avatar {
-                background-color: #e74c3c;
-            }
-
-            .comment-user-info {
-                display: flex;
                 flex-direction: column;
             }
 
-            .comment-username {
-                font-weight: 600;
-                display: flex;
-                align-items: center;
+            .detail-col:first-child {
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
             }
 
-            .admin-badge {
-                background-color: #e74c3c;
-                color: white;
-                padding: 2px 8px;
-                border-radius: 12px;
-                font-size: 0.7rem;
-                font-weight: 600;
-                margin-left: 8px;
+            .files-list {
+                grid-template-columns: 1fr;
             }
-
-            .comment-time {
-                font-size: 0.8rem;
-                color: #888;
-            }
-
-            .comment-actions a {
-                color: #e74c3c;
-                text-decoration: none;
-                padding: 4px 8px;
-                border-radius: 4px;
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                transition: background-color 0.2s;
-            }
-
-            .comment-actions a:hover {
-                background-color: rgba(231, 76, 60, 0.1);
-            }
-
-            .comment-content {
-                padding: 15px;
-                line-height: 1.5;
-            }
-
-            .no-comments {
-                text-align: center;
-                padding: 30px;
-                color: #888;
-                background-color: rgba(0, 0, 0, 0.03);
-                border-radius: 8px;
-                border: 1px dashed var(--border-color);
-            }
-
-            .no-comments i {
-                font-size: 2rem;
-                margin-bottom: 10px;
-                display: block;
-                opacity: 0.6;
-            }
-
-            .comment-form {
-                margin-top: 20px;
-                background-color: rgba(0, 0, 0, 0.03);
-                border-radius: 8px;
-                padding: 15px;
-                border: 1px solid var(--border-color);
-            }
-
-            .comment-form-header {
-                font-weight: 600;
-                color: var(--text-primary);
-                margin-bottom: 12px;
-                display: flex;
-                align-items: center;
-            }
-
-            .comment-form-header i {
-                color: var(--primary-color);
-                margin-right: 8px;
-            }
-
-            .comment-form textarea {
-                width: 100%;
-                padding: 12px;
-                border: 1px solid var(--border-color);
-                border-radius: 8px;
-                background-color: var(--card-bg);
-                color: var(--text-primary);
-                min-height: 100px;
-                margin-bottom: 15px;
-                resize: vertical;
-                transition: border-color 0.3s;
-            }
-
-            .comment-form textarea:focus {
-                outline: none;
-                border-color: var(--primary-color);
-                box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
-            }
-
-            .submit-btn {
-                background-color: var(--primary-color);
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 10px 15px;
-                font-weight: 600;
-                cursor: pointer;
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                transition: all 0.2s;
-            }
-
-            .submit-btn:hover {
-                background-color: var(--primary-color-dark, #2980b9);
-                transform: translateY(-2px);
-            }
-
-            /* Кнопка "Показати більше коментарів" */
-            .show-more-comments {
-                display: flex;
-                justify-content: center;
-                margin: 5px 0 20px 0;
-            }
-
-            .show-more-btn {
-                background-color: transparent;
-                border: 1px solid var(--border-color);
-                color: var(--primary-color);
-                padding: 8px 15px;
-                border-radius: 6px;
-                font-weight: 500;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                transition: all 0.2s;
-            }
-
-            .show-more-btn:hover {
-                background-color: rgba(52, 152, 219, 0.05);
-                border-color: var(--primary-color);
-            }
-
-            .comment-item.hidden-comment {
-                display: none;
-            }
-
-            @media (max-width: 768px) {
-                .detail-row {
-                    flex-direction: column;
-                }
-
-                .detail-col:first-child {
-                    border-right: none;
-                    border-bottom: 1px solid var(--border-color);
-                }
-
-                .files-list {
-                    grid-template-columns: 1fr;
-                }
-            }
-            <?php endif; ?>
-        </style>
-    </head>
+        }
+        <?php endif; ?>
+    </style>
+</head>
 <body>
 <div class="wrapper" id="mainWrapper">
     <!-- Сайдбар (ліва панель) -->
@@ -1331,7 +1539,7 @@ if (!function_exists('hasAdminAccess')) {
                 <i class="bi bi-person"></i>
                 <span>Профіль</span>
             </a>
-            <a href="/user/settings.php" class="nav-link">
+            <a href="/dah/user/settings.php" class="nav-link">
                 <i class="bi bi-gear"></i>
                 <span>Налаштування</span>
             </a>
@@ -1340,457 +1548,437 @@ if (!function_exists('hasAdminAccess')) {
                 <span>Вихід</span>
             </a>
             <div class="nav-divider"></div>
-            <div class="theme-switcher">
-                <span class="theme-label">Тема:</span>
-                <div class="theme-options">
-                    <a href="?theme=light<?php echo isset($orderId) ? '&id='.$orderId : ''; ?>" class="theme-option <?php echo $currentTheme === 'light' ? 'active' : ''; ?>">
-                        <i class="bi bi-sun"></i> Світла
-                    </a>
-                    <a href="?theme=dark<?php echo isset($orderId) ? '&id='.$orderId : ''; ?>" class="theme-option <?php echo $currentTheme === 'dark' ? 'active' : ''; ?>">
-                        <i class="bi bi-moon"></i> Темна
-                    </a>
-                </div>
-            </div>
+            <!-- Видалено блок з вибором теми в боковому меню -->
         </nav>
     </aside>
 
     <!-- Основний контент -->
     <main class="main-content" id="mainContent">
-    <header class="main-header">
-        <button id="menuToggle" class="menu-toggle">
-            <i class="bi bi-list"></i>
-        </button>
-        <div class="header-title">
-            <h1>
-                <?php if (isset($orderDetails)): ?>
-                    <a href="orders.php" class="back-link"><i class="bi bi-arrow-left"></i></a>
-                    Замовлення #<?php echo $orderDetails['id']; ?>
-                <?php else: ?>
-                    Мої замовлення
-                <?php endif; ?>
-            </h1>
-        </div>
-        <div class="header-actions">
-            <button id="themeSwitchBtn" class="theme-switch-btn">
-                <i class="bi <?php echo $currentTheme === 'dark' ? 'bi-sun' : 'bi-moon'; ?>"></i>
+        <header class="main-header">
+            <button id="menuToggle" class="menu-toggle">
+                <i class="bi bi-list"></i>
             </button>
-
-            <div class="user-dropdown">
-                <button class="user-dropdown-btn">
-                    <div class="user-avatar-small">
-                        <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
-                    </div>
-                    <span class="user-name"><?php echo safeEcho($user['username']); ?></span>
-                    <i class="bi bi-chevron-down"></i>
+            <div class="header-title">
+                <h1>
+                    <?php if (isset($orderDetails)): ?>
+                        <a href="orders.php" class="back-link"><i class="bi bi-arrow-left"></i></a>
+                        Замовлення #<?php echo $orderDetails['id']; ?>
+                    <?php else: ?>
+                        Мої замовлення
+                    <?php endif; ?>
+                </h1>
+            </div>
+            <div class="header-actions">
+                <button id="themeSwitchBtn" class="theme-switch-btn">
+                    <i class="bi <?php echo $currentTheme === 'dark' ? 'bi-sun' : 'bi-moon'; ?>"></i>
                 </button>
-                <div class="user-dropdown-menu">
-                    <a href="/dah/user/profile.php"><i class="bi bi-person"></i> Профіль</a>
-                    <a href="/user/settings.php"><i class="bi bi-gear"></i> Налаштування</a>
-                    <div class="dropdown-divider"></div>
-                    <a href="#" id="toggleThemeButton">
-                        <i class="bi <?php echo $currentTheme === 'dark' ? 'bi-sun' : 'bi-moon'; ?>"></i>
-                        <?php echo $currentTheme === 'dark' ? 'Світла тема' : 'Темна тема'; ?>
-                    </a>
-                    <div class="dropdown-divider"></div>
-                    <a href="/logout.php"><i class="bi bi-box-arrow-right"></i> Вихід</a>
+
+                <div class="user-dropdown">
+                    <button class="user-dropdown-btn">
+                        <div class="user-avatar-small">
+                            <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                        </div>
+                        <span class="user-name"><?php echo safeEcho($user['username']); ?></span>
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                    <div class="user-dropdown-menu">
+                        <a href="/dah/user/profile.php"><i class="bi bi-person"></i> Профіль</a>
+                        <a href="/dah/user/settings.php"><i class="bi bi-gear"></i> Налаштування</a>
+                        <div class="dropdown-divider"></div>
+                        <!-- Видалено блок з вибором теми у випадаючому меню -->
+                        <a href="/logout.php"><i class="bi bi-box-arrow-right"></i> Вихід</a>
+                    </div>
                 </div>
             </div>
+        </header>
+
+        <!-- Сповіщення про успіх додавання коментаря -->
+        <div class="notification notification-success" id="successNotification">
+            <i class="bi bi-check-circle"></i>
+            <span id="successMessage">Коментар успішно додано</span>
         </div>
-    </header>
 
-    <!-- Сповіщення про успіх додавання коментаря -->
-    <div class="notification notification-success" id="successNotification">
-        <i class="bi bi-check-circle"></i>
-        <span id="successMessage">Коментар успішно додано</span>
-    </div>
+        <!-- Сповіщення про успіх створення замовлення -->
+        <div class="notification notification-success" id="orderSuccessNotification">
+            <i class="bi bi-check-circle"></i>
+            <span id="orderSuccessMessage">Замовлення успішно створено!</span>
+        </div>
 
-    <!-- Сповіщення про успіх створення замовлення -->
-    <div class="notification notification-success" id="orderSuccessNotification">
-        <i class="bi bi-check-circle"></i>
-        <span id="orderSuccessMessage">Замовлення успішно створено!</span>
-    </div>
+        <!-- Сповіщення про помилку -->
+        <div class="notification notification-error" id="errorNotification">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span id="errorMessage">Сталася помилка</span>
+        </div>
 
-    <div class="content-wrapper">
-    <div class="section-container">
-<?php if ($errorMessage): ?>
-    <div class="alert alert-danger">
-        <i class="bi bi-exclamation-triangle"></i> <?php echo $errorMessage; ?>
-    </div>
-<?php endif; ?>
+        <div class="content-wrapper">
+            <div class="section-container">
+                <?php if ($errorMessage): ?>
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> <?php echo $errorMessage; ?>
+                    </div>
+                <?php endif; ?>
 
-<?php
-// Перевіряємо успішне створення замовлення
-if (isset($_GET['success']) && $_GET['success'] === 'created' && isset($_GET['id'])) {
-    $orderId = filter_var($_GET['id'], FILTER_VALIDATE_INT);
-    echo '<div class="order-created-banner">
-                            <i class="bi bi-check-circle-fill"></i>
-                            <div>
-                                <strong>Замовлення #' . $orderId . ' успішно створено!</strong>
-                                <p>Ваше замовлення прийнято в роботу. Ми зв\'яжемося з вами найближчим часом.</p>
+                <?php if (isset($orderDetails)): ?>
+                    <!-- Покращене відображення деталей замовлення -->
+                    <div class="order-details-container <?php echo getStatusClass($orderDetails['status']); ?>">
+                        <div class="order-header">
+                            <div class="order-title"><?php echo safeEcho($orderDetails['service']); ?></div>
+                            <div class="status-badge <?php echo getStatusClass($orderDetails['status']); ?>">
+                                <?php echo safeEcho($orderDetails['status']); ?>
                             </div>
-                        </div>';
-}
-?>
+                        </div>
 
-<?php if (isset($orderDetails)): ?>
-    <!-- Покращене відображення деталей замовлення -->
-<div class="order-details-container <?php echo getStatusClass($orderDetails['status']); ?>">
-    <div class="order-header">
-        <div class="order-title"><?php echo safeEcho($orderDetails['service']); ?></div>
-        <div class="status-badge <?php echo getStatusClass($orderDetails['status']); ?>">
-            <?php echo safeEcho($orderDetails['status']); ?>
-        </div>
-    </div>
+                        <div class="detail-row">
+                            <div class="detail-col">
+                                <div class="detail-label">Номер замовлення:</div>
+                                <div class="detail-value">#<?php echo $orderDetails['id']; ?></div>
+                            </div>
+                            <div class="detail-col">
+                                <div class="detail-label">Послуга:</div>
+                                <div class="detail-value"><?php echo safeEcho($orderDetails['service']); ?></div>
+                            </div>
+                        </div>
 
-    <div class="detail-row">
-        <div class="detail-col">
-            <div class="detail-label">Номер замовлення:</div>
-            <div class="detail-value">#<?php echo $orderDetails['id']; ?></div>
-        </div>
-        <div class="detail-col">
-            <div class="detail-label">Послуга:</div>
-            <div class="detail-value"><?php echo safeEcho($orderDetails['service']); ?></div>
-        </div>
-    </div>
+                        <div class="detail-row">
+                            <div class="detail-col">
+                                <div class="detail-label">Категорія:</div>
+                                <div class="detail-value <?php echo empty(trim($orderDetails['category_name'] ?? '')) ? 'empty' : ''; ?>">
+                                    <?php echo !empty(trim($orderDetails['category_name'] ?? '')) ? safeEcho($orderDetails['category_name']) : 'Не вказано'; ?>
+                                </div>
+                            </div>
+                            <div class="detail-col">
+                                <div class="detail-label">Тип пристрою:</div>
+                                <div class="detail-value <?php echo empty(trim($orderDetails['device_type'] ?? '')) ? 'empty' : ''; ?>">
+                                    <?php echo !empty(trim($orderDetails['device_type'] ?? '')) ? safeEcho($orderDetails['device_type']) : 'Не вказано'; ?>
+                                </div>
+                            </div>
+                        </div>
 
-    <div class="detail-row">
-        <div class="detail-col">
-            <div class="detail-label">Категорія:</div>
-            <div class="detail-value <?php echo empty(trim($orderDetails['category_name'] ?? '')) ? 'empty' : ''; ?>">
-                <?php echo !empty(trim($orderDetails['category_name'] ?? '')) ? safeEcho($orderDetails['category_name']) : 'Не вказано'; ?>
-            </div>
-        </div>
-        <div class="detail-col">
-            <div class="detail-label">Тип пристрою:</div>
-            <div class="detail-value <?php echo empty(trim($orderDetails['device_type'] ?? '')) ? 'empty' : ''; ?>">
-                <?php echo !empty(trim($orderDetails['device_type'] ?? '')) ? safeEcho($orderDetails['device_type']) : 'Не вказано'; ?>
-            </div>
-        </div>
-    </div>
+                        <div class="detail-row">
+                            <div class="detail-col">
+                                <div class="detail-label">Модель пристрою:</div>
+                                <div class="detail-value <?php echo empty(trim($orderDetails['device_model'] ?? '')) ? 'empty' : ''; ?>">
+                                    <?php echo !empty(trim($orderDetails['device_model'] ?? '')) ? safeEcho($orderDetails['device_model']) : 'Не вказано'; ?>
+                                </div>
+                            </div>
+                            <div class="detail-col">
+                                <div class="detail-label">Серійний номер:</div>
+                                <div class="detail-value <?php echo empty(trim($orderDetails['device_serial'] ?? '')) ? 'empty' : ''; ?>">
+                                    <?php echo !empty(trim($orderDetails['device_serial'] ?? '')) ? safeEcho($orderDetails['device_serial']) : 'Не вказано'; ?>
+                                </div>
+                            </div>
+                        </div>
 
-    <div class="detail-row">
-        <div class="detail-col">
-            <div class="detail-label">Модель пристрою:</div>
-            <div class="detail-value <?php echo empty(trim($orderDetails['device_model'] ?? '')) ? 'empty' : ''; ?>">
-                <?php echo !empty(trim($orderDetails['device_model'] ?? '')) ? safeEcho($orderDetails['device_model']) : 'Не вказано'; ?>
-            </div>
-        </div>
-        <div class="detail-col">
-            <div class="detail-label">Серійний номер:</div>
-            <div class="detail-value <?php echo empty(trim($orderDetails['device_serial'] ?? '')) ? 'empty' : ''; ?>">
-                <?php echo !empty(trim($orderDetails['device_serial'] ?? '')) ? safeEcho($orderDetails['device_serial']) : 'Не вказано'; ?>
-            </div>
-        </div>
-    </div>
-
-    <div class="detail-row">
-        <div class="detail-col">
-            <div class="detail-label">Контактний телефон:</div>
-            <div class="detail-value <?php echo empty(trim($orderDetails['phone'] ?? '')) ? 'empty' : ''; ?>">
-                <?php echo !empty(trim($orderDetails['phone'] ?? '')) ? safeEcho($orderDetails['phone']) : 'Не вказано'; ?>
-            </div>
-        </div>
-        <div class="detail-col">
-            <div class="detail-label">Статус:</div>
-            <div class="detail-value">
+                        <div class="detail-row">
+                            <div class="detail-col">
+                                <div class="detail-label">Контактний телефон:</div>
+                                <div class="detail-value <?php echo empty(trim($orderDetails['phone'] ?? '')) ? 'empty' : ''; ?>">
+                                    <?php echo !empty(trim($orderDetails['phone'] ?? '')) ? safeEcho($orderDetails['phone']) : 'Не вказано'; ?>
+                                </div>
+                            </div>
+                            <div class="detail-col">
+                                <div class="detail-label">Статус:</div>
+                                <div class="detail-value">
                                     <span class="status-badge <?php echo getStatusClass($orderDetails['status']); ?>">
                                         <?php echo safeEcho($orderDetails['status']); ?>
                                     </span>
-            </div>
-        </div>
-    </div>
-
-    <div class="detail-row">
-        <div class="detail-col">
-            <div class="detail-label">Дата створення:</div>
-            <div class="detail-value"><?php echo formatDate($orderDetails['created_at']); ?></div>
-        </div>
-        <div class="detail-col"></div>
-    </div>
-
-    <div class="description-section">
-        <div class="description-label">
-            <i class="bi bi-file-text"></i> Опис:
-        </div>
-        <div class="description-text <?php echo empty(trim($orderDetails['description'] ?? '')) ? 'empty' : ''; ?>">
-            <?php echo !empty(trim($orderDetails['description'] ?? '')) ? nl2br(safeEcho($orderDetails['description'])) : 'Не вказано'; ?>
-        </div>
-    </div>
-
-    <?php if (!empty($orderFiles)): ?>
-        <div class="files-section">
-        <div class="files-label">
-            <i class="bi bi-paperclip"></i> Прикріплені файли
-        </div>
-        <div class="files-list">
-        <?php foreach ($orderFiles as $file): ?>
-            <div class="file-item">
-            <?php
-            $ext = pathinfo($file['original_name'], PATHINFO_EXTENSION);
-            $icon = 'bi-file-earmark';
-
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
-                $icon = 'bi-file-earmark-image';
-            } elseif (in_array($ext, ['pdf'])) {
-                $icon = 'bi-file-earmark-pdf';
-            } elseif (in_array($ext, ['doc', 'docx'])) {
-                $icon = 'bi-file-earmark-word';
-            } elseif (in_array($ext, ['xls', 'xlsx'])) {
-                $icon = 'bi-file-earmark-excel';
-            } elseif (in_array($ext, ['zip', 'rar', '7z'])) {
-                $icon = 'bi-file-earmark-zip';
-            } elseif (in_array($ext, ['txt'])) {
-                $icon = 'bi-file-earmark-text';
-            }
-            ?>
-                <div>
-                    <i class="bi <?php echo $icon; ?>"></i>
-                    <span class="file-name"><?php echo safeEcho($file['original_name']); ?></span>
-                </div>
-                <a href="<?php echo str_replace('../../', '/', $file['file_path']); ?>" download class="file-download-btn" title="Завантажити файл">
-                    <i class="bi bi-download"></i>
-                </a>
-            </div>
-        <?php endforeach; ?>
-        </div>
-        </div>
-    <?php endif; ?>
-
-    <div class="comments-section">
-        <div class="comments-label">
-            <i class="bi bi-chat-left-text"></i> Коментарі
-        </div>
-
-        <?php if (!empty($comments)): ?>
-            <div class="comments-list">
-                <?php foreach ($comments as $index => $comment):
-                    $isHidden = $index >= $showInitialComments;
-                    ?>
-                    <div class="comment-item <?php echo $comment['user_id'] == $user['id'] ? 'own-comment' : ''; ?>
-                                             <?php echo $comment['role'] === 'admin' ? 'admin-comment' : ''; ?>
-                                             <?php echo $isHidden ? 'hidden-comment' : ''; ?>"
-                         id="comment-<?php echo $comment['id']; ?>">
-                        <div class="comment-header">
-                            <div class="comment-user">
-                                <div class="comment-avatar">
-                                    <?php echo strtoupper(substr($comment['username'] ?? 'U', 0, 1)); ?>
-                                </div>
-                                <div class="comment-user-info">
-                                    <div class="comment-username">
-                                        <?php echo safeEcho($comment['username']); ?>
-                                        <?php if ($comment['role'] === 'admin'): ?>
-                                            <span class="admin-badge">Адмін</span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="comment-time"><?php echo formatDate($comment['created_at']); ?></div>
                                 </div>
                             </div>
+                        </div>
 
-                            <?php if ($comment['user_id'] == $user['id'] || hasAdminAccess()): ?>
-                                <div class="comment-actions">
-                                    <a href="?id=<?php echo $orderDetails['id']; ?>&delete_comment=<?php echo $comment['id']; ?>"
-                                       title="Видалити коментар"
-                                       onclick="return confirm('Ви впевнені, що хочете видалити цей коментар?');">
-                                        <i class="bi bi-trash"></i> Видалити
-                                    </a>
+                        <div class="detail-row">
+                            <div class="detail-col">
+                                <div class="detail-label">Дата створення:</div>
+                                <div class="detail-value"><?php echo formatDate($orderDetails['created_at']); ?></div>
+                            </div>
+                            <div class="detail-col"></div>
+                        </div>
+
+                        <div class="description-section">
+                            <div class="description-label">
+                                <i class="bi bi-file-text"></i> Опис:
+                            </div>
+                            <div class="description-text <?php echo empty(trim($orderDetails['description'] ?? '')) ? 'empty' : ''; ?>">
+                                <?php echo !empty(trim($orderDetails['description'] ?? '')) ? nl2br(safeEcho($orderDetails['description'])) : 'Не вказано'; ?>
+                            </div>
+                        </div>
+
+                        <?php if (!empty($orderFiles)): ?>
+                            <div class="files-section">
+                                <div class="files-label">
+                                    <i class="bi bi-paperclip"></i> Прикріплені файли
+                                </div>
+                                <div class="files-list">
+                                    <?php foreach ($orderFiles as $file): ?>
+                                        <div class="file-item">
+                                            <?php
+                                            $ext = pathinfo($file['original_name'], PATHINFO_EXTENSION);
+                                            $icon = 'bi-file-earmark';
+
+                                            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
+                                                $icon = 'bi-file-earmark-image';
+                                            } elseif (in_array($ext, ['pdf'])) {
+                                                $icon = 'bi-file-earmark-pdf';
+                                            } elseif (in_array($ext, ['doc', 'docx'])) {
+                                                $icon = 'bi-file-earmark-word';
+                                            } elseif (in_array($ext, ['xls', 'xlsx'])) {
+                                                $icon = 'bi-file-earmark-excel';
+                                            } elseif (in_array($ext, ['zip', 'rar', '7z'])) {
+                                                $icon = 'bi-file-earmark-zip';
+                                            } elseif (in_array($ext, ['txt'])) {
+                                                $icon = 'bi-file-earmark-text';
+                                            }
+                                            ?>
+                                            <div>
+                                                <i class="bi <?php echo $icon; ?>"></i>
+                                                <span class="file-name"><?php echo safeEcho($file['original_name']); ?></span>
+                                            </div>
+                                            <a href="<?php echo str_replace('../../', '/', $file['file_path']); ?>" download class="file-download-btn" title="Завантажити файл">
+                                                <i class="bi bi-download"></i>
+                                            </a>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="comments-section">
+                            <div class="comments-label">
+                                <i class="bi bi-chat-left-text"></i> Коментарі
+                            </div>
+
+                            <?php if (!empty($comments)): ?>
+                                <div class="comments-list">
+                                    <?php foreach ($comments as $index => $comment):
+                                        $isHidden = $index >= $showInitialComments;
+                                        ?>
+                                        <div class="comment-item <?php echo $comment['user_id'] == $user['id'] ? 'own-comment' : ''; ?>
+                                             <?php echo $comment['role'] === 'admin' ? 'admin-comment' : ''; ?>
+                                             <?php echo $isHidden ? 'hidden-comment' : ''; ?>"
+                                             id="comment-<?php echo $comment['id']; ?>">
+                                            <div class="comment-header">
+                                                <div class="comment-user">
+                                                    <div class="comment-avatar">
+                                                        <?php echo strtoupper(substr($comment['username'] ?? 'U', 0, 1)); ?>
+                                                    </div>
+                                                    <div class="comment-user-info">
+                                                        <div class="comment-username" data-original-name="<?php echo safeEcho($comment['username']); ?>">
+                                                            <?php echo safeEcho($comment['username']); ?>
+                                                            <?php if ($comment['role'] === 'admin'): ?>
+                                                                <span class="admin-badge">Адмін</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                        <div class="comment-time"><?php echo formatDate($comment['created_at']); ?></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="comment-content">
+                                                <?php echo nl2br(safeEcho($comment['content'])); ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+
+                                <?php if ($showLoadMore): ?>
+                                    <div class="show-more-comments">
+                                        <button type="button" id="showMoreCommentsBtn" class="show-more-btn" aria-label="Показати більше коментарів">
+                                            <i class="bi bi-chat-square-text"></i> Показати більше коментарів
+                                        </button>
+                                    </div>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <div class="no-comments">
+                                    <i class="bi bi-chat-left"></i>
+                                    <p>Поки що немає коментарів</p>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (canAddComments($orderDetails['status'])): ?>
+                                <div class="comment-form">
+                                    <div class="comment-form-header">
+                                        <i class="bi bi-plus-circle"></i> Додати новий коментар
+                                    </div>
+                                    <form method="post" action="orders.php">
+                                        <input type="hidden" name="order_id" value="<?php echo $orderDetails['id']; ?>">
+                                        <textarea name="comment" placeholder="Напишіть ваш коментар тут..." required></textarea>
+                                        <button type="submit" name="add_comment" class="submit-btn" aria-label="Відправити">
+                                            <i class="bi bi-send"></i> Відправити
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php else: ?>
+                                <div class="comments-disabled-notice">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                    <span>Додавання коментарів недоступне для замовлень зі статусом "<?php echo $orderDetails['status']; ?>"</span>
                                 </div>
                             <?php endif; ?>
                         </div>
-                        <div class="comment-content">
-                            <?php echo nl2br(safeEcho($comment['content'])); ?>
-                        </div>
                     </div>
-                <?php endforeach; ?>
-            </div>
+                <?php else: ?>
+                    <!-- Відображення списку замовлень -->
+                    <div class="orders-list-container">
+                        <div class="orders-header">
+                            <h2>Список замовлень</h2>
+                            <a href="/dah/user/create-order.php" class="btn-primary">
+                                <i class="bi bi-plus-circle"></i> Створити нове замовлення
+                            </a>
+                        </div>
 
-            <?php if ($showLoadMore): ?>
-                <div class="show-more-comments">
-                    <button type="button" id="showMoreCommentsBtn" class="show-more-btn">
-                        <i class="bi bi-chat-square-text"></i> Показати більше коментарів
-                    </button>
-                </div>
-            <?php endif; ?>
-        <?php else: ?>
-            <div class="no-comments">
-                <i class="bi bi-chat-left"></i>
-                <p>Поки що немає коментарів</p>
-            </div>
-        <?php endif; ?>
+                        <!-- Оновлені фільтри для списку замовлень -->
+                        <form method="get" action="orders.php" class="filters-form">
+                            <div class="filter-group filter-status">
+                                <label for="status-filter">Статус:</label>
+                                <select id="status-filter" name="status" onchange="this.form.submit()">
+                                    <option value="all" <?php echo !isset($statusFilter) || $statusFilter === 'all' ? 'selected' : ''; ?>>Всі статуси</option>
+                                    <option value="new" <?php echo isset($statusFilter) && $statusFilter === 'new' ? 'selected' : ''; ?>>Новий</option>
+                                    <option value="in_progress" <?php echo isset($statusFilter) && $statusFilter === 'in_progress' ? 'selected' : ''; ?>>В роботі</option>
+                                    <option value="waiting" <?php echo isset($statusFilter) && $statusFilter === 'waiting' ? 'selected' : ''; ?>>Очікується</option>
+                                    <option value="waiting_delivery" <?php echo isset($statusFilter) && $statusFilter === 'waiting_delivery' ? 'selected' : ''; ?>>Очікується поставки товару</option>
+                                    <option value="completed" <?php echo isset($statusFilter) && $statusFilter === 'completed' ? 'selected' : ''; ?>>Завершено</option>
+                                    <option value="canceled" <?php echo isset($statusFilter) && $statusFilter === 'canceled' ? 'selected' : ''; ?>>Не можливо виконати</option>
+                                </select>
+                            </div>
 
-        <?php if (canAddComments($orderDetails['status'])): ?>
-            <div class="comment-form">
-                <div class="comment-form-header">
-                    <i class="bi bi-plus-circle"></i> Додати новий коментар
-                </div>
-                <form method="post" action="orders.php">
-                    <input type="hidden" name="order_id" value="<?php echo $orderDetails['id']; ?>">
-                    <textarea name="comment" placeholder="Напишіть ваш коментар тут..." required></textarea>
-                    <button type="submit" name="add_comment" class="submit-btn">
-                        <i class="bi bi-send"></i> Відправити
-                    </button>
-                </form>
-            </div>
-        <?php else: ?>
-            <div class="comments-disabled-notice">
-                <i class="bi bi-exclamation-triangle"></i>
-                <span>Додавання коментарів недоступне для замовлень зі статусом "<?php echo $orderDetails['status']; ?>"</span>
-            </div>
-        <?php endif; ?>
-    </div>
-</div>
-<?php else: ?>
-    <!-- Відображення списку замовлень -->
-    <div class="orders-list-container">
-        <div class="orders-header">
-            <h2>Список замовлень</h2>
-            <a href="/dah/user/create-order.php" class="btn-primary">
-                <i class="bi bi-plus-circle"></i> Створити нове замовлення
-            </a>
-        </div>
+                            <div class="filter-group filter-sort">
+                                <label for="sort-by">Сортувати за:</label>
+                                <select id="sort-by" name="sort" onchange="this.form.submit()">
+                                    <option value="newest" <?php echo !isset($sortOrder) || $sortOrder === 'newest' ? 'selected' : ''; ?>>Спочатку нові</option>
+                                    <option value="oldest" <?php echo isset($sortOrder) && $sortOrder === 'oldest' ? 'selected' : ''; ?>>Спочатку старі</option>
+                                </select>
+                            </div>
 
-        <!-- Оновлені фільтри для списку замовлень -->
-        <form method="get" action="orders.php" class="filters-form">
-            <div class="filter-group filter-status">
-                <label for="status-filter">Статус:</label>
-                <select id="status-filter" name="status" onchange="this.form.submit()">
-                    <option value="all" <?php echo !isset($statusFilter) || $statusFilter === 'all' ? 'selected' : ''; ?>>Всі статуси</option>
-                    <option value="new" <?php echo isset($statusFilter) && $statusFilter === 'new' ? 'selected' : ''; ?>>Новий</option>
-                    <option value="in_progress" <?php echo isset($statusFilter) && $statusFilter === 'in_progress' ? 'selected' : ''; ?>>В роботі</option>
-                    <option value="completed" <?php echo isset($statusFilter) && $statusFilter === 'completed' ? 'selected' : ''; ?>>Завершено</option>
-                    <option value="canceled" <?php echo isset($statusFilter) && $statusFilter === 'canceled' ? 'selected' : ''; ?>>Не можливо виконати</option>
-                </select>
-            </div>
+                            <div class="search-group">
+                                <i class="bi bi-search search-icon"></i>
+                                <input type="text" class="search-input" name="search" placeholder="Пошук за номером або описом..."
+                                       value="<?php echo isset($searchTerm) ? htmlspecialchars($searchTerm) : ''; ?>">
+                                <button type="submit" class="search-btn"><i class="bi bi-search"></i></button>
+                            </div>
 
-            <div class="filter-group filter-sort">
-                <label for="sort-by">Сортувати за:</label>
-                <select id="sort-by" name="sort" onchange="this.form.submit()">
-                    <option value="newest" <?php echo !isset($sortOrder) || $sortOrder === 'newest' ? 'selected' : ''; ?>>Спочатку нові</option>
-                    <option value="oldest" <?php echo isset($sortOrder) && $sortOrder === 'oldest' ? 'selected' : ''; ?>>Спочатку старі</option>
-                </select>
-            </div>
+                            <?php if ((isset($statusFilter) && $statusFilter !== 'all') || (isset($searchTerm) && !empty($searchTerm))): ?>
+                                <div class="filter-actions">
+                                    <a href="orders.php" class="clear-filters-btn"><i class="bi bi-x-circle"></i> Очистити фільтри</a>
+                                </div>
+                            <?php endif; ?>
+                        </form>
 
-            <div class="search-group">
-                <i class="bi bi-search search-icon"></i>
-                <input type="text" class="search-input" name="search" placeholder="Пошук за номером або описом..."
-                       value="<?php echo isset($searchTerm) ? htmlspecialchars($searchTerm) : ''; ?>">
-                <button type="submit" class="search-btn"><i class="bi bi-search"></i></button>
-            </div>
+                        <div class="orders-stats">
+                            <div class="stat-item">
+                                <div class="stat-icon stat-icon-new">
+                                    <i class="bi bi-hourglass"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number"><?php echo $stats['new']; ?></div>
+                                    <div class="stat-label">Новий</div>
+                                </div>
+                            </div>
 
-            <?php if ((isset($statusFilter) && $statusFilter !== 'all') || (isset($searchTerm) && !empty($searchTerm))): ?>
-                <div class="filter-actions">
-                    <a href="orders.php" class="clear-filters-btn"><i class="bi bi-x-circle"></i> Очистити фільтри</a>
-                </div>
-            <?php endif; ?>
-        </form>
+                            <div class="stat-item">
+                                <div class="stat-icon stat-icon-in-progress">
+                                    <i class="bi bi-gear"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number"><?php echo $stats['in_progress']; ?></div>
+                                    <div class="stat-label">В роботі</div>
+                                </div>
+                            </div>
 
-        <div class="orders-stats">
-            <div class="stat-item">
-                <div class="stat-icon stat-icon-new">
-                    <i class="bi bi-hourglass"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?php echo $stats['new']; ?></div>
-                    <div class="stat-label">Новий</div>
-                </div>
-            </div>
+                            <div class="stat-item">
+                                <div class="stat-icon stat-icon-waiting">
+                                    <i class="bi bi-clock"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number"><?php echo $stats['waiting']; ?></div>
+                                    <div class="stat-label">Очікується</div>
+                                </div>
+                            </div>
 
-            <div class="stat-item">
-                <div class="stat-icon stat-icon-in-progress">
-                    <i class="bi bi-gear"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?php echo $stats['in_progress']; ?></div>
-                    <div class="stat-label">В роботі</div>
-                </div>
-            </div>
+                            <div class="stat-item">
+                                <div class="stat-icon stat-icon-waiting-delivery">
+                                    <i class="bi bi-truck"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number"><?php echo $stats['waiting_delivery'] ?? 0; ?></div>
+                                    <div class="stat-label">Очікується поставки</div>
+                                </div>
+                            </div>
 
-            <div class="stat-item">
-                <div class="stat-icon stat-icon-waiting">
-                    <i class="bi bi-clock"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?php echo $stats['waiting']; ?></div>
-                    <div class="stat-label">Очікується</div>
-                </div>
-            </div>
+                            <div class="stat-item">
+                                <div class="stat-icon stat-icon-completed">
+                                    <i class="bi bi-check-circle"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number"><?php echo $stats['completed']; ?></div>
+                                    <div class="stat-label">Завершено</div>
+                                </div>
+                            </div>
 
-            <div class="stat-item">
-                <div class="stat-icon stat-icon-completed">
-                    <i class="bi bi-check-circle"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?php echo $stats['completed']; ?></div>
-                    <div class="stat-label">Завершено</div>
-                </div>
-            </div>
-
-            <div class="stat-item">
-                <div class="stat-icon stat-icon-canceled">
-                    <i class="bi bi-x-circle"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?php echo $stats['canceled']; ?></div>
-                    <div class="stat-label">Не можливо виконати</div>
-                </div>
-            </div>
-        </div>
-
-        <?php if (!empty($orders)): ?>
-            <div class="orders-grid">
-                <?php foreach ($orders as $order): ?>
-                    <div class="order-card">
-                        <div class="order-card-header">
-                            <div class="order-service"><?php echo safeEcho($order['service']); ?></div>
-                            <div class="status-badge <?php echo getStatusClass($order['status']); ?>">
-                                <?php echo safeEcho($order['status']); ?>
+                            <div class="stat-item">
+                                <div class="stat-icon stat-icon-canceled">
+                                    <i class="bi bi-x-circle"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number"><?php echo $stats['canceled']; ?></div>
+                                    <div class="stat-label">Не можливо виконати</div>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="order-card-content">
-                            <div class="order-number">Замовлення #<?php echo $order['id']; ?></div>
+                        <?php if (!empty($orders)): ?>
+                            <div class="orders-grid">
+                                <?php foreach ($orders as $order): ?>
+                                    <div class="order-card">
+                                        <div class="order-card-header">
+                                            <div class="order-service"><?php echo safeEcho($order['service']); ?></div>
+                                            <div class="status-badge <?php echo getStatusClass($order['status']); ?>">
+                                                <?php echo safeEcho($order['status']); ?>
+                                            </div>
+                                        </div>
 
-                            <ul class="order-info-list">
-                                <li class="order-info-item">
-                                    <div class="order-info-label">Створено:</div>
-                                    <div class="order-info-value"><?php echo formatDate($order['created_at']); ?></div>
-                                </li>
+                                        <div class="order-card-content">
+                                            <div class="order-number">Замовлення #<?php echo $order['id']; ?></div>
 
-                                <li class="order-info-item">
-                                    <div class="order-info-label">Опис:</div>
-                                    <div class="order-info-value">
-                                        <?php echo !empty($order['description']) ? (strlen($order['description']) > 50 ? substr(safeEcho($order['description']), 0, 50) . '...' : safeEcho($order['description'])) : 'Не вказано'; ?>
+                                            <ul class="order-info-list">
+                                                <li class="order-info-item">
+                                                    <div class="order-info-label">Створено:</div>
+                                                    <div class="order-info-value"><?php echo formatDate($order['created_at']); ?></div>
+                                                </li>
+
+                                                <li class="order-info-item">
+                                                    <div class="order-info-label">Опис:</div>
+                                                    <div class="order-info-value">
+                                                        <?php echo !empty($order['description']) ? (strlen($order['description']) > 50 ? substr(safeEcho($order['description']), 0, 50) . '...' : safeEcho($order['description'])) : 'Не вказано'; ?>
+                                                    </div>
+                                                </li>
+
+                                                <li class="order-info-item">
+                                                    <div class="order-info-label">Категорія:</div>
+                                                    <div class="order-info-value"><?php echo safeEcho($order['category_name'] ?? 'Не вказано'); ?></div>
+                                                </li>
+                                            </ul>
+                                        </div>
+
+                                        <div class="order-card-footer">
+                                            <div class="order-date"><?php echo formatDate($order['created_at']); ?></div>
+                                            <a href="orders.php?id=<?php echo $order['id']; ?>" class="order-details-link">
+                                                <i class="bi bi-eye"></i> Деталі
+                                            </a>
+                                        </div>
                                     </div>
-                                </li>
-
-                                <li class="order-info-item">
-                                    <div class="order-info-label">Категорія:</div>
-                                    <div class="order-info-value"><?php echo safeEcho($order['category_name'] ?? 'Не вказано'); ?></div>
-                                </li>
-                            </ul>
-                        </div>
-
-                        <div class="order-card-footer">
-                            <div class="order-date"><?php echo formatDate($order['created_at']); ?></div>
-                            <a href="orders.php?id=<?php echo $order['id']; ?>" class="order-details-link">
-                                <i class="bi bi-eye"></i> Деталі
-                            </a>
-                        </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="no-orders">
+                                <i class="bi bi-clipboard-x"></i>
+                                <p>У вас ще немає жодних замовлень</p>
+                                <a href="/dah/user/create-order.php" class="create-order-btn">
+                                    <i class="bi bi-plus-circle"></i> Створити замовлення
+                                </a>
+                            </div>
+                        <?php endif; ?>
                     </div>
-                <?php endforeach; ?>
+                <?php endif; ?>
             </div>
-        <?php else: ?>
-            <div class="no-orders">
-                <i class="bi bi-clipboard-x"></i>
-                <p>У вас ще немає жодних замовлень</p>
-                <a href="/dah/user/create-order.php" class="create-order-btn">
-                    <i class="bi bi-plus-circle"></i> Створити замовлення
-                </a>
-            </div>
-        <?php endif; ?>
-    </div>
-<?php endif; ?>
-    </div>
-    </div>
+        </div>
     </main>
 
     <!-- Затемнення фону при відкритті мобільного меню -->
@@ -1806,9 +1994,6 @@ if (isset($_GET['success']) && $_GET['success'] === 'created' && isset($_GET['id
         const sidebarToggle = document.getElementById('sidebarToggle');
         const overlay = document.getElementById('overlay');
         const themeSwitchBtn = document.getElementById('themeSwitchBtn');
-        const toggleThemeButton = document.getElementById('toggleThemeButton');
-        const successNotification = document.getElementById('successNotification');
-        const orderSuccessNotification = document.getElementById('orderSuccessNotification');
 
         // Перевіряємо, чи є збережений стан сайдбара
         const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
@@ -1875,6 +2060,32 @@ if (isset($_GET['success']) && $_GET['success'] === 'created' && isset($_GET['id
             });
         }
 
+        // Функція для відображення сповіщення
+        function showNotification(message, type = 'success', duration = 4000) {
+            let notification;
+
+            // Визначаємо, яке сповіщення використовувати
+            if (type === 'success') {
+                notification = document.getElementById('orderSuccessNotification');
+                document.getElementById('orderSuccessMessage').textContent = message;
+            } else if (type === 'error') {
+                notification = document.getElementById('errorNotification');
+                if (notification) {
+                    document.getElementById('errorMessage').textContent = message;
+                }
+            }
+
+            // Якщо знайшли сповіщення, показуємо його
+            if (notification) {
+                notification.classList.add('show');
+
+                // Автоматично приховуємо через вказаний час
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, duration);
+            }
+        }
+
         // Функція для перемикання теми з плавним переходом
         function toggleTheme() {
             // Отримуємо поточну тему
@@ -1893,18 +2104,58 @@ if (isset($_GET['success']) && $_GET['success'] === 'created' && isset($_GET['id
             document.cookie = `theme=${newTheme}; path=/; max-age=2592000`; // ~30 днів
 
             // Змінюємо всі кнопки перемикання теми
-            const themeSwitchers = document.querySelectorAll('.theme-switch-btn, #toggleThemeButton');
+            const themeSwitchers = document.querySelectorAll('.theme-switch-btn');
             themeSwitchers.forEach(switcher => {
                 const icon = switcher.querySelector('i');
                 if (icon) {
                     icon.className = newTheme === 'dark' ? 'bi bi-sun' : 'bi bi-moon';
                 }
+            });
 
-                // Якщо є текст, оновлюємо його також
-                const text = switcher.textContent;
-                if (text && text.includes('тема')) {
-                    switcher.innerHTML = `<i class="${newTheme === 'dark' ? 'bi bi-sun' : 'bi bi-moon'}"></i> ${newTheme === 'dark' ? 'Світла тема' : 'Темна тема'}`;
+            // Оновлення імен користувачів у коментарях
+            const commentUsernames = document.querySelectorAll('.comment-username');
+            commentUsernames.forEach(usernameElement => {
+                // Зберігаємо оригінальне ім'я користувача в data-атрибуті, якщо його ще немає
+                if (!usernameElement.hasAttribute('data-original-name')) {
+                    usernameElement.setAttribute('data-original-name', usernameElement.textContent.trim());
                 }
+
+                // Отримуємо оригінальне ім'я
+                const originalName = usernameElement.getAttribute('data-original-name');
+
+                // Застосовуємо різні стилі залежно від теми
+                if (newTheme === 'dark') {
+                    usernameElement.innerHTML = originalName;
+                } else {
+                    // Для світлої теми прибираємо бейдж адміна, якщо він є
+                    const adminBadge = usernameElement.querySelector('.admin-badge');
+                    if (adminBadge) {
+                        usernameElement.innerHTML = originalName;
+                        usernameElement.appendChild(adminBadge);
+                    } else {
+                        usernameElement.innerHTML = originalName;
+                    }
+                }
+            });
+
+            // Застосовуємо нові стилі до елементів тексту
+            const textElements = document.querySelectorAll('.description-text, .comment-content, .comment-header, .comment-time');
+            textElements.forEach(el => {
+                // Додаємо та видаляємо клас для перезастосування стилів
+                el.classList.add('theme-transition');
+                setTimeout(() => {
+                    el.classList.remove('theme-transition');
+                }, 10);
+            });
+
+            // Застосовуємо нові стилі до кнопок та елементів файлів
+            const themeAdaptiveElements = document.querySelectorAll('.show-more-btn, .submit-btn, .file-item, .file-download-btn, .file-name');
+            themeAdaptiveElements.forEach(el => {
+                // Додаємо та видаляємо клас для перезастосування стилів
+                el.classList.add('theme-transition');
+                setTimeout(() => {
+                    el.classList.remove('theme-transition');
+                }, 10);
             });
 
             // Зберігаємо поточний скрол
@@ -1928,18 +2179,6 @@ if (isset($_GET['success']) && $_GET['success'] === 'created' && isset($_GET['id
             });
         }
 
-        if (toggleThemeButton) {
-            toggleThemeButton.addEventListener('click', function(e) {
-                e.preventDefault();
-                toggleTheme();
-
-                // Закриваємо випадаюче меню
-                if (userDropdownMenu) {
-                    userDropdownMenu.classList.remove('show');
-                }
-            });
-        }
-
         // Обробник для кнопки "Показати більше коментарів"
         const showMoreCommentsBtn = document.getElementById('showMoreCommentsBtn');
         if (showMoreCommentsBtn) {
@@ -1955,45 +2194,30 @@ if (isset($_GET['success']) && $_GET['success'] === 'created' && isset($_GET['id
             });
         }
 
-        // Показуємо спливаюче повідомлення про успіх, якщо є параметр в URL
+        // Перевіряємо параметри для автоматичного відображення сповіщень
         const urlParams = new URLSearchParams(window.location.search);
 
-        // Обробка повідомлення про додавання коментаря
-        if (urlParams.has('comment_added') && urlParams.get('comment_added') === 'true') {
-            if (successNotification) {
-                successNotification.classList.add('show');
+        // Перевірка для успішного створення замовлення
+        if (urlParams.has('success')) {
+            const successType = urlParams.get('success');
 
-                // Автоматично приховуємо повідомлення через 4 секунди
-                setTimeout(() => {
-                    successNotification.classList.remove('show');
-                }, 4000);
+            if (successType === 'created' && urlParams.has('id')) {
+                const orderId = urlParams.get('id');
+                showNotification(`Замовлення #${orderId} успішно створено!`, 'success', 4000);
 
-                // Оновлюємо URL без перезавантаження сторінки
-                const newUrl = window.location.pathname + window.location.search.replace(/[?&]comment_added=true/, '');
+                // Оновлюємо URL без параметра success
+                const newUrl = window.location.pathname + window.location.search.replace(/&success=created/, '');
                 window.history.replaceState({}, document.title, newUrl);
             }
         }
 
-        // Обробка повідомлення про створення замовлення
-        if (urlParams.has('success') && urlParams.get('success') === 'created') {
-            if (orderSuccessNotification) {
-                // Отримуємо номер замовлення, якщо є
-                const orderId = urlParams.get('id') || '';
-                if (orderId) {
-                    document.getElementById('orderSuccessMessage').textContent = `Замовлення #${orderId} успішно створено!`;
-                }
+        // Перевірка для успішного додавання коментаря
+        if (urlParams.has('comment_added') && urlParams.get('comment_added') === 'true') {
+            showNotification('Коментар успішно додано', 'success', 4000);
 
-                orderSuccessNotification.classList.add('show');
-
-                // Автоматично приховуємо повідомлення через 4 секунди
-                setTimeout(() => {
-                    orderSuccessNotification.classList.remove('show');
-                }, 4000);
-
-                // Оновлюємо URL без перезавантаження сторінки, але зберігаємо id
-                const newUrl = window.location.pathname + window.location.search.replace(/&success=created/, '');
-                window.history.replaceState({}, document.title, newUrl);
-            }
+            // Оновлюємо URL без параметра comment_added
+            const newUrl = window.location.pathname + window.location.search.replace(/[?&]comment_added=true/, '');
+            window.history.replaceState({}, document.title, newUrl);
         }
 
         // Зміна розміру екрану - для адаптивного дизайну
@@ -2009,5 +2233,39 @@ if (isset($_GET['success']) && $_GET['success'] === 'created' && isset($_GET['id
     });
 </script>
 
+<!-- Додаткові скрипти для обробки помилок та поліпшення UX -->
+<script>
+    // Перехоплення помилок
+    window.onerror = function(message, source, lineno, colno, error) {
+        console.error("Сталася помилка:", message, "Джерело:", source, "Рядок:", lineno);
+        return true; // Попереджаємо стандартну обробку помилок в браузері
+    };
+
+    // Перевіряємо підтримку localStorage
+    function isLocalStorageAvailable() {
+        try {
+            localStorage.setItem('test', 'test');
+            localStorage.removeItem('test');
+            return true;
+        } catch(e) {
+            return false;
+        }
+    }
+
+    // Поліпшення доступності
+    document.addEventListener('DOMContentLoaded', function() {
+        // Додавання атрибутів ARIA для кращої доступності
+        const buttons = document.querySelectorAll('button, a.btn-primary, .submit-btn');
+        buttons.forEach(button => {
+            if (!button.hasAttribute('aria-label') && button.textContent.trim()) {
+                button.setAttribute('aria-label', button.textContent.trim());
+            }
+        });
+
+        // Додаємо поточну дату і час у консоль для розробників
+        console.info("Система запущена: 2025-05-13 19:11:06");
+        console.info("Поточний користувач: 1GodofErath");
+    });
+</script>
 </body>
 </html>
