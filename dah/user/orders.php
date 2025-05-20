@@ -1508,16 +1508,23 @@ if (!function_exists('hasAdminAccess')) {
                 <i class="bi bi-arrow-left"></i>
             </button>
         </div>
-        <div class="user-info">
+
+        <!-- Новий стилізований компонент користувача -->
+        <div class="user-profile-widget">
             <div class="user-avatar">
-                <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>
+                    <img src="<?php echo safeEcho($user['profile_pic']); ?>" alt="Фото профілю">
+                <?php else: ?>
+                    <div class="user-avatar-placeholder">
+                        <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                    </div>
+                <?php endif; ?>
             </div>
-            <div class="user-details">
-                <h3><?php echo safeEcho($user['username']); ?></h3>
-                <p><?php echo safeEcho($user['email']); ?></p>
+            <div class="user-name">
+                <?php echo safeEcho($user['username']); ?>
             </div>
-            <a href="../user/profile.php" class="edit-profile-btn">Редагувати профіль</a>
         </div>
+
         <nav class="sidebar-nav">
             <a href="/dah/dashboard.php" class="nav-link">
                 <i class="bi bi-speedometer2"></i>
@@ -1548,10 +1555,8 @@ if (!function_exists('hasAdminAccess')) {
                 <span>Вихід</span>
             </a>
             <div class="nav-divider"></div>
-            <!-- Видалено блок з вибором теми в боковому меню -->
         </nav>
     </aside>
-
     <!-- Основний контент -->
     <main class="main-content" id="mainContent">
         <header class="main-header">
@@ -2266,6 +2271,19 @@ if (!function_exists('hasAdminAccess')) {
         console.info("Система запущена: 2025-05-13 19:11:06");
         console.info("Поточний користувач: 1GodofErath");
     });
+    // Застосовуємо тему до елементів сайдбару
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    if (currentTheme) {
+        const userProfileWidget = document.querySelector('.user-profile-widget');
+        if (userProfileWidget) {
+            userProfileWidget.style.backgroundColor = currentTheme === 'light' ? '#e9ecef' : '#232323';
+
+            const userName = userProfileWidget.querySelector('.user-name');
+            if (userName) {
+                userName.style.color = currentTheme === 'light' ? '#212529' : 'white';
+            }
+        }
+    }
 </script>
 </body>
 </html>
