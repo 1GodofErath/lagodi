@@ -708,7 +708,6 @@ if (!function_exists('hasAdminAccess')) {
         :root[data-theme="dark"] .filter-group::before {
             filter: brightness(0) invert(1) opacity(0.6);
         }
-
         /* Стилі для пошуку */
         .search-group {
             display: flex;
