@@ -1,12 +1,19 @@
 <?php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
-session_start();
-// Підключення необхідних файлів
+
+// Підключення необхідних файлів у правильному порядку
 require_once '../dah/confi/database.php';
+require_once '../dah/include/session.php'; // Підключаємо session.php раніше
 require_once '../dah/include/functions.php';
 require_once '../dah/include/auth.php';
-require_once '../dah/include/session.php';
+
+// Створюємо директорію для логів, якщо вона не існує
+$log_dir = $_SERVER['DOCUMENT_ROOT'] . '/dah/logs';
+if (!is_dir($log_dir)) {
+    mkdir($log_dir, 0755, true);
+}
+$log_file = $_SERVER['DOCUMENT_ROOT'] . '/dah/logs/dashboard.log';
 
 // Перевірка авторизації
 if (!isLoggedIn()) {
@@ -94,14 +101,16 @@ function formatTimeAgo($datetime) {
     }
 }
 
-// Отримання повідомлень
-function getUserNotificationsLocal($userId, $limit = 5) {
+// Оновлена функція для отримання коментарів користувача замість сповіщень
+function getUserCommentsLocal($userId, $limit = 5) {
     $database = new Database();
     $db = $database->getConnection();
 
-    $query = "SELECT * FROM notifications 
-              WHERE user_id = :user_id 
-              ORDER BY created_at DESC 
+    $query = "SELECT c.*, o.id as order_id, o.service 
+              FROM comments c 
+              JOIN orders o ON c.order_id = o.id
+              WHERE o.user_id = :user_id 
+              ORDER BY c.created_at DESC 
               LIMIT :limit";
 
     $stmt = $db->prepare($query);
@@ -112,26 +121,36 @@ function getUserNotificationsLocal($userId, $limit = 5) {
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Функція для підрахунку непрочитаних повідомлень
-function getUnreadNotificationsCountLocal($userId) {
+// Оновлена функція для підрахунку непрочитаних коментарів
+function getUnreadCommentsCountLocal($userId) {
     $database = new Database();
     $db = $database->getConnection();
 
     $query = "SELECT COUNT(*) as unread_count 
-              FROM notifications 
-              WHERE user_id = :user_id AND is_read = 0";
+              FROM comments c
+              JOIN orders o ON c.order_id = o.id
+              WHERE o.user_id = :user_id AND c.is_read = 0";
 
     $stmt = $db->prepare($query);
     $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
     $stmt->execute();
 
     $result = $stmt->fetch();
-    return isset($result['unread_count']) ? intval($result['unread_count']) : 0;
+    $count = isset($result['unread_count']) ? intval($result['unread_count']) : 0;
+
+    // Логуємо для відлагодження
+    $log_file = $_SERVER['DOCUMENT_ROOT'] . '/dah/logs/dashboard.log';
+    file_put_contents($log_file, date('Y-m-d H:i:s') . " - getUnreadCommentsCountLocal for user $userId, count: $count\n", FILE_APPEND);
+
+    return $count;
 }
 
-// Используем локальные функции вместо функций из functions.php
-$notifications = getUserNotificationsLocal($user['id'], 5);
-$unread_count = getUnreadNotificationsCountLocal($user['id']);
+// Використовуємо нові функції для роботи з коментарями замість сповіщень
+$notifications = getUserCommentsLocal($user['id'], 5);
+$unread_count = getUnreadCommentsCountLocal($user['id']);
+
+// Додаємо лог
+file_put_contents($log_file, date('Y-m-d H:i:s') . " - Dashboard loaded for user {$user['id']}, unread count: $unread_count\n", FILE_APPEND);
 
 // Отримання доступних сервісів
 $services = getServices();
@@ -366,7 +385,7 @@ $current_time = gmdate("Y-m-d H:i:s");
             </a>
             <a href="/dah/user/notifications.php" class="nav-link">
                 <i class="bi bi-bell"></i>
-                <span>Сповіщення</span>
+                <span>Коментарі</span>
                 <?php if ($unread_count > 0): ?>
                     <span class="badge"><?php echo $unread_count; ?></span>
                 <?php endif; ?>
@@ -375,7 +394,7 @@ $current_time = gmdate("Y-m-d H:i:s");
                 <i class="bi bi-person"></i>
                 <span>Профіль</span>
             </a>
-            <a href="/user/settings.php" class="nav-link">
+            <a href="/dah/user/settings.php" class="nav-link">
                 <i class="bi bi-gear"></i>
                 <span>Налаштування</span>
             </a>
@@ -422,7 +441,7 @@ $current_time = gmdate("Y-m-d H:i:s");
                     </button>
                     <div class="notification-dropdown-menu">
                         <div class="notification-header">
-                            <h3>Сповіщення</h3>
+                            <h3>Коментарі</h3>
                             <button class="mark-all-read">
                                 <span class="mark-all-read-text">Позначити все як прочитане</span>
                                 <span class="ajax-loader" style="display: none;"></span>
@@ -431,60 +450,38 @@ $current_time = gmdate("Y-m-d H:i:s");
                         <div class="notification-body">
                             <?php if (empty($notifications)): ?>
                                 <div class="notification-empty">
-                                    <p>У вас немає сповіщень</p>
+                                    <p>У вас немає коментарів</p>
                                 </div>
                             <?php else: ?>
                                 <?php
-                                // Для отладки: раскомментировать, чтобы увидеть содержимое массива
-                                // echo '<div class="debug-log">';
-                                // print_r($notifications);
-                                // echo '</div>';
-
                                 foreach ($notifications as $notification):
-                                    // Если уведомление пустое - пропускаем
+                                    // Якщо коментар порожній - пропускаємо
                                     if (empty($notification)) continue;
 
                                     $isRead = !empty($notification['is_read']);
-                                    $iconClass = 'bi-envelope' . ($isRead ? '-open' : '');
+                                    $iconClass = 'bi-chat-dots'; // Default для коментарів
 
-                                    // Проверяем тип уведомления и устанавливаем соответствующий класс
-                                    if (isset($notification['type']) && !empty($notification['type'])) {
-                                        switch ($notification['type']) {
-                                            case 'status_update':
-                                                $iconClass = 'bi-arrow-clockwise';
-                                                break;
-                                            case 'comment':
-                                                $iconClass = 'bi-chat-dots';
-                                                break;
-                                            case 'waiting_delivery':
-                                                $iconClass = 'bi-truck';
-                                                break;
-                                            case 'system':
-                                                $iconClass = 'bi-gear';
-                                                break;
-                                        }
-                                    }
-
-                                    // Определяем URL для перенаправления
-                                    $redirectUrl = "/dah/user/notifications.php";
+                                    // Визначаємо URL для перенаправлення
+                                    $redirectUrl = "/dah/user/orders.php";
                                     if (isset($notification['order_id']) && !empty($notification['order_id'])) {
                                         $redirectUrl = "/dah/user/orders.php?id={$notification['order_id']}";
                                     }
 
-                                    // Определяем заголовок и содержимое
-                                    $title = isset($notification['title']) && !empty($notification['title'])
-                                        ? htmlspecialchars($notification['title'])
-                                        : 'Уведомление';
+                                    // Визначаємо заголовок - назва послуги із замовлення
+                                    $title = isset($notification['service']) && !empty($notification['service'])
+                                        ? htmlspecialchars($notification['service'])
+                                        : 'Замовлення #' . $notification['order_id'];
 
-                                    $content = '';
-                                    if (isset($notification['content']) && !empty($notification['content'])) {
-                                        $content = htmlspecialchars($notification['content']);
-                                    } elseif (isset($notification['description']) && !empty($notification['description'])) {
-                                        $content = htmlspecialchars($notification['description']);
-                                    }
+                                    // Визначаємо вміст коментаря
+                                    $content = isset($notification['content']) && !empty($notification['content'])
+                                        ? htmlspecialchars($notification['content'])
+                                        : '';
+
+                                    // Якщо є прикріплений файл
+                                    $hasAttachment = isset($notification['file_attachment']) && !empty($notification['file_attachment']);
                                     ?>
                                     <a href="#"
-                                       class="notification-item <?= $isRead ? '' : 'unread' ?> <?= isset($notification['type']) ? 'type-'.$notification['type'] : '' ?>"
+                                       class="notification-item <?= $isRead ? '' : 'unread' ?> type-comment"
                                        data-notification-id="<?= $notification['id'] ?>"
                                        data-redirect="<?= $redirectUrl ?>">
                                         <div class="notification-icon">
@@ -493,6 +490,9 @@ $current_time = gmdate("Y-m-d H:i:s");
                                         <div class="notification-content">
                                             <h4><?= $title ?></h4>
                                             <p><?= $content ?></p>
+                                            <?php if ($hasAttachment): ?>
+                                                <p><i class="bi bi-paperclip"></i> Файл</p>
+                                            <?php endif; ?>
                                             <span class="notification-time"><?= isset($notification['created_at']) ? formatTimeAgo($notification['created_at']) : 'недавно' ?></span>
                                         </div>
                                     </a>
@@ -500,7 +500,7 @@ $current_time = gmdate("Y-m-d H:i:s");
                             <?php endif; ?>
                         </div>
                         <div class="notification-footer">
-                            <a href="/dah/user/notifications.php" class="view-all">Переглянути всі сповіщення</a>
+                            <a href="/dah/user/notifications.php" class="view-all">Переглянути всі коментарі</a>
                         </div>
                     </div>
                 </div>
@@ -515,7 +515,7 @@ $current_time = gmdate("Y-m-d H:i:s");
                     </button>
                     <div class="user-dropdown-menu">
                         <a href="/dah/user/profile.php"><i class="bi bi-person"></i> Профіль</a>
-                        <a href="/user/settings.php"><i class="bi bi-gear"></i> Налаштування</a>
+                        <a href="/dah/user/settings.php"><i class="bi bi-gear"></i> Налаштування</a>
                         <div class="dropdown-divider"></div>
                         <a href="?theme=<?php echo $currentTheme === 'dark' ? 'light' : 'dark'; ?>">
                             <i class="bi <?php echo $currentTheme === 'dark' ? 'bi-sun' : 'bi-moon'; ?>"></i>
@@ -537,7 +537,7 @@ $current_time = gmdate("Y-m-d H:i:s");
                     </div>
                     <div class="welcome-text">
                         <h2>Вітаємо, <?php echo htmlspecialchars($user['username']); ?>!</h2>
-                        <p>Ласкаво просимо до особистого кабінету Lagodi Service. Тут ви можете керувати своїми замовленнями та отримувати сповіщення про їх статус.</p>
+                        <p>Ласкаво просимо до особистого кабінету Lagodi Service. Тут ви можете керувати своїми замовленнями[...]
                     </div>
                 </div>
             </div>
@@ -830,114 +830,177 @@ $current_time = gmdate("Y-m-d H:i:s");
             userDropdownMenu.classList.toggle('show');
 
             // Закриваємо меню сповіщень, якщо воно відкрите
-            notificationDropdownMenu.classList.remove('show');
+            const notificationDropdownMenu = document.querySelector('.notification-dropdown-menu');
+            if (notificationDropdownMenu) {
+                notificationDropdownMenu.classList.remove('show');
+            }
         });
 
         // Випадаюче меню сповіщень
         const notificationBtn = document.querySelector('.notification-btn');
         const notificationDropdownMenu = document.querySelector('.notification-dropdown-menu');
 
-        notificationBtn.addEventListener('click', function(event) {
-            event.stopPropagation();
-            notificationDropdownMenu.classList.toggle('show');
+        if (notificationBtn && notificationDropdownMenu) {
+            notificationBtn.addEventListener('click', function(event) {
+                event.stopPropagation();
+                notificationDropdownMenu.classList.toggle('show');
 
-            // Закриваємо меню користувача, якщо воно відкрите
-            userDropdownMenu.classList.remove('show');
+                // Закриваємо меню користувача, якщо воно відкрите
+                userDropdownMenu.classList.remove('show');
 
-            // Видаляємо індикатор нових повідомлень після того, як користувач відкрив меню
-            const indicator = document.querySelector('.notification-indicator');
-            if (indicator) {
-                indicator.style.display = 'none';
-            }
-        });
-
-        // Обработчик для всех ссылок уведомлений
-        document.querySelectorAll('.notification-item').forEach(item => {
-            item.addEventListener('click', function(e) {
-                e.preventDefault();
-                const notificationId = this.dataset.notificationId;
-                const redirectUrl = this.dataset.redirect;
-
-                console.log('Clicked notification:', notificationId, 'redirect to:', redirectUrl);
-
-                // Показываем лоадер на кнопке
-                const icon = this.querySelector('.notification-icon i');
-                if (icon) {
-                    icon.style.display = 'none';
-
-                    // Создаем и добавляем лоадер
-                    const loader = document.createElement('span');
-                    loader.className = 'ajax-loader';
-                    this.querySelector('.notification-icon').appendChild(loader);
-                }
-
-                // Если уведомление не отмечено как прочитанное
-                if (this.classList.contains('unread')) {
-                    // Делаем AJAX-запрос для отметки уведомления как прочитанного
-                    fetch('/dah/api/mark_notification_read.php', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            notification_id: notificationId
-                        })
-                    })
-                        .then(response => {
-                            if (!response.ok) {
-                                throw new Error('Network response was not ok: ' + response.status);
-                            }
-                            return response.json();
-                        })
-                        .then(data => {
-                            console.log('Mark as read response:', data);
-
-                            // Меняем визуальный статус в интерфейсе
-                            this.classList.remove('unread');
-
-                            // Перенаправляем на указанный URL
-                            window.location.href = redirectUrl;
-                        })
-                        .catch(error => {
-                            console.error('Error marking notification as read:', error);
-
-                            // В случае ошибки - просто перенаправляем
-                            window.location.href = redirectUrl;
-                        });
-                } else {
-                    // Если уже прочитано, просто перенаправляем
-                    window.location.href = redirectUrl;
+                // Видаляємо індикатор нових повідомлень після того, як користувач відкрив меню
+                const indicator = document.querySelector('.notification-indicator');
+                if (indicator) {
+                    indicator.style.display = 'none';
                 }
             });
-        });
+        }
+
+        // Функція для показу повідомлень користувачу
+        function showNotification(type, message) {
+            // Створюємо елемент повідомлення
+            const notification = document.createElement('div');
+            notification.className = 'alert alert-' + type;
+            notification.style.position = 'fixed';
+            notification.style.top = '20px';
+            notification.style.right = '20px';
+            notification.style.zIndex = '9999';
+            notification.style.maxWidth = '300px';
+            notification.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';
+            notification.style.transition = 'opacity 0.5s';
+
+            // Додаємо вміст повідомлення
+            notification.innerHTML = `
+            <div class="alert-icon">
+                <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+            </div>
+            <div class="alert-content">
+                ${message}
+            </div>
+            <button type="button" class="alert-close">&times;</button>
+        `;
+
+            // Додаємо повідомлення на сторінку
+            document.body.appendChild(notification);
+
+            // Додаємо обробник для закриття повідомлення
+            notification.querySelector('.alert-close').addEventListener('click', function() {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 500);
+            });
+
+            // Автоматично видаляємо повідомлення через 5 секунд
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 500);
+            }, 5000);
+        }
+
+        // Обробник для всіх посилань коментарів у таблиці
+        const notificationItems = document.querySelectorAll('.notification-item');
+        if (notificationItems.length > 0) {
+            notificationItems.forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const notificationId = this.dataset.notificationId;
+                    const redirectUrl = this.dataset.redirect;
+
+                    console.log('Clicked comment:', notificationId, 'redirect to:', redirectUrl);
+
+                    // Показуємо лоадер на елементі
+                    const icon = this.querySelector('.notification-icon i');
+                    if (icon) {
+                        icon.style.display = 'none';
+
+                        // Додаємо лоадер
+                        const loader = document.createElement('span');
+                        loader.className = 'ajax-loader';
+                        this.querySelector('.notification-icon').appendChild(loader);
+                    }
+
+                    // Якщо коментар непрочитаний, позначаємо його як прочитаний
+                    if (this.classList.contains('unread')) {
+                        // AJAX-запит для позначення коментаря як прочитаного
+                        fetch('/dah/api/mark_comment_read.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: JSON.stringify({
+                                comment_id: notificationId
+                            }),
+                            credentials: 'same-origin'
+                        })
+                            .then(response => {
+                                if (!response.ok) {
+                                    console.error('Server responded with status:', response.status);
+                                    throw new Error('Network response was not ok: ' + response.status);
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                console.log('Mark as read response:', data);
+
+                                if (data.success) {
+                                    // Міняємо візуальний статус в інтерфейсі
+                                    this.classList.remove('unread');
+
+                                    // Оновлюємо лічильники
+                                    updateNotificationCounters();
+                                } else {
+                                    console.error('Error in API response:', data.error || 'Unknown error');
+                                }
+
+                                // Перенаправляємо на потрібну сторінку
+                                setTimeout(() => {
+                                    window.location.href = redirectUrl;
+                                }, 300);
+                            })
+                            .catch(error => {
+                                console.error('Error marking comment as read:', error);
+
+                                // У випадку помилки все одно перенаправляємо
+                                window.location.href = redirectUrl;
+                            });
+                    } else {
+                        // Якщо вже прочитано, просто перенаправляємо
+                        window.location.href = redirectUrl;
+                    }
+                });
+            });
+        }
 
         // Позначити всі як прочитані
         const markAllReadBtn = document.querySelector('.mark-all-read');
         if (markAllReadBtn) {
-            const markAllReadText = document.querySelector('.mark-all-read-text');
-            const markAllReadLoader = document.querySelector('.mark-all-read .ajax-loader');
+            const markAllReadText = markAllReadBtn.querySelector('.mark-all-read-text') || markAllReadBtn;
+            const markAllReadLoader = markAllReadBtn.querySelector('.ajax-loader');
 
             markAllReadBtn.addEventListener('click', function(event) {
                 event.preventDefault();
                 event.stopPropagation();
 
-                console.log('Marking all as read...');
+                console.log('Marking all comments as read...');
 
-                // Показываем лоадер
-                markAllReadText.style.display = 'none';
-                markAllReadLoader.style.display = 'inline-block';
+                // Показуємо лоадер
+                if (markAllReadText) markAllReadText.style.display = 'none';
+                if (markAllReadLoader) markAllReadLoader.style.display = 'inline-block';
 
-                // Запрос на сервер для отметки всех как прочитанных
-                fetch('/dah/api/mark_notification_read.php', {
+                // Запит на сервер для відмітки всіх як прочитаних
+                fetch('/dah/api/mark_comment_read.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
                     },
                     body: JSON.stringify({
                         mark_all: true
-                    })
+                    }),
+                    credentials: 'same-origin'
                 })
                     .then(response => {
+                        console.log('Raw response:', response);
                         if (!response.ok) {
                             throw new Error('Network response was not ok: ' + response.status);
                         }
@@ -947,7 +1010,7 @@ $current_time = gmdate("Y-m-d H:i:s");
                         console.log('Mark all as read response:', data);
 
                         if (data.success) {
-                            // Обновляем UI
+                            // Оновлюємо UI
                             const unreadNotifications = document.querySelectorAll('.notification-item.unread');
                             unreadNotifications.forEach(item => {
                                 item.classList.remove('unread');
@@ -956,14 +1019,12 @@ $current_time = gmdate("Y-m-d H:i:s");
                                 if(icon && icon.classList.contains('new')) {
                                     icon.classList.remove('new');
                                 }
-                                if(icon && icon.classList.contains('bi-envelope')) {
-                                    icon.classList.replace('bi-envelope', 'bi-envelope-open');
-                                }
                             });
 
-                            // Скрываем значки уведомлений
+                            // Приховуємо значки сповіщень
                             const notificationBadge = document.querySelector('.notification-btn .badge');
                             const notificationIndicator = document.querySelector('.notification-indicator');
+                            const sidebarBadge = document.querySelector('.sidebar-nav .nav-link i.bi-bell + span + .badge');
 
                             if(notificationBadge) {
                                 notificationBadge.style.display = 'none';
@@ -972,18 +1033,105 @@ $current_time = gmdate("Y-m-d H:i:s");
                             if(notificationIndicator) {
                                 notificationIndicator.style.display = 'none';
                             }
+
+                            if(sidebarBadge) {
+                                sidebarBadge.style.display = 'none';
+                            }
+
+                            // Показуємо повідомлення про успіх
+                            showNotification('success', 'Всі коментарі позначено як прочитані');
+                        } else {
+                            console.error('Error in marking all as read:', data.error || 'Unknown error');
+                            showNotification('error', data.error || 'Помилка при позначенні всіх коментарів як прочитаних');
                         }
 
-                        // В любом случае возвращаем кнопку в исходное состояние
-                        markAllReadText.style.display = 'inline';
-                        markAllReadLoader.style.display = 'none';
+                        // В будь-якому випадку повертаємо кнопку в початковий стан
+                        if (markAllReadText) markAllReadText.style.display = 'inline';
+                        if (markAllReadLoader) markAllReadLoader.style.display = 'none';
+
+                        // Опціонально закриваємо випадаюче меню
+                        if (notificationDropdownMenu) {
+                            notificationDropdownMenu.classList.remove('show');
+                        }
                     })
                     .catch(error => {
-                        console.error('Error marking all notifications as read:', error);
-                        // Возвращаем кнопку в исходное состояние
-                        markAllReadText.style.display = 'inline';
-                        markAllReadLoader.style.display = 'none';
+                        console.error('Error marking all comments as read:', error);
+                        // Повертаємо кнопку в початковий стан
+                        if (markAllReadText) markAllReadText.style.display = 'inline';
+                        if (markAllReadLoader) markAllReadLoader.style.display = 'none';
+
+                        // Показуємо повідомлення про помилку
+                        showNotification('error', 'Помилка при позначенні всіх коментарів як прочитаних');
                     });
+            });
+        }
+
+        // Функція для оновлення лічильників сповіщень
+        function updateNotificationCounters() {
+            // Оновлюємо лічильник в кнопці сповіщень
+            const badgeElement = document.querySelector('.notification-btn .badge');
+            if (badgeElement) {
+                const currentCount = parseInt(badgeElement.textContent);
+                if (currentCount > 1) {
+                    badgeElement.textContent = currentCount - 1;
+                } else {
+                    badgeElement.style.display = 'none';
+                    // Також ховаємо індикатор
+                    const indicator = document.querySelector('.notification-indicator');
+                    if (indicator) {
+                        indicator.style.display = 'none';
+                    }
+                }
+            }
+
+            // Оновлюємо лічильник у сайдбарі
+            const sidebarBadge = document.querySelector('.sidebar-nav .nav-link i.bi-bell + span + .badge');
+            if (sidebarBadge) {
+                const currentCount = parseInt(sidebarBadge.textContent);
+                if (currentCount > 1) {
+                    sidebarBadge.textContent = currentCount - 1;
+                } else {
+                    sidebarBadge.style.display = 'none';
+                }
+            }
+        }
+
+        // Графіки та статистика - розкоментуйте цей код, якщо використовуєте Chart.js
+        /*
+        const statisticsCharts = document.querySelectorAll('.statistics-chart');
+        if (statisticsCharts.length > 0) {
+            statisticsCharts.forEach(chartElement => {
+                const ctx = chartElement.getContext('2d');
+                const chartType = chartElement.dataset.chartType || 'line';
+                const chartData = JSON.parse(chartElement.dataset.chartData || '{}');
+
+                new Chart(ctx, {
+                    type: chartType,
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        elements: {
+                            line: {
+                                tension: 0.4
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            });
+        }
+        */
+
+        // Ініціалізація тултіпів bootstrap, якщо вони використовуються
+        const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        if (tooltips.length > 0 && typeof bootstrap !== 'undefined') {
+            tooltips.forEach(tooltip => {
+                new bootstrap.Tooltip(tooltip);
             });
         }
 
@@ -1005,12 +1153,26 @@ $current_time = gmdate("Y-m-d H:i:s");
         // Додаємо обробник для зміни розміру вікна
         window.addEventListener('resize', function() {
             if (window.innerWidth >= 992) {
-                sidebar.classList.remove('mobile-active');
-                overlay.classList.remove('active');
+                if (sidebar) {
+                    sidebar.classList.remove('mobile-active');
+                }
+                if (overlay) {
+                    overlay.classList.remove('active');
+                }
                 document.body.classList.remove('no-scroll');
             }
         });
+
+        // Автоматичне оновлення даних через певні проміжки часу (якщо потрібно)
+        /*
+        function refreshData() {
+            // Ваш код для оновлення даних через AJAX
+            console.log('Оновлення даних...');
+        }
+
+        // Запускаємо оновлення кожні 5 хвилин
+        const refreshInterval = 5 * 60 * 1000; // 5 хвилин в мілісекундах
+        setInterval(refreshData, refreshInterval);
+        */
     });
 </script>
-</body>
-</html>
