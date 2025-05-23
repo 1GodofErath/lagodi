@@ -444,11 +444,73 @@ if (!function_exists('hasAdminAccess')) {
             border: 1px solid var(--border-color);
         }
 
-        /* Стилі для випадаючих списків - адаптивні під темну та світлу теми */
+        /* Стили для боковой панели в светлой и темной темах */
+        .sidebar-light {
+            background-color: #f8f9fa;
+            color: #212529;
+            border-right: 1px solid #dee2e6;
+        }
+
+        .sidebar-dark {
+            background-color: #1e1e1e;
+            color: #ffffff;
+            border-right: 1px solid #343a40;
+        }
+
+        /* Стили для элементов боковой панели в светлой теме */
+        .sidebar-light .sidebar-nav .nav-link {
+            color: #495057;
+        }
+
+        .sidebar-light .sidebar-nav .nav-link:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+            color: #212529;
+        }
+
+        .sidebar-light .sidebar-nav .nav-link.active {
+            background-color: rgba(13, 110, 253, 0.1);
+            color: #0d6efd;
+        }
+
+        /* Стили для элементов боковой панели в темной теме */
+        .sidebar-dark .sidebar-nav .nav-link {
+            color: #adb5bd;
+        }
+
+        .sidebar-dark .sidebar-nav .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: #ffffff;
+        }
+
+        .sidebar-dark .sidebar-nav .nav-link.active {
+            background-color: rgba(52, 152, 219, 0.2);
+            color: #3498db;
+        }
+
+        /* Стили для виджета пользователя в зависимости от темы */
+        .sidebar-light .user-profile-widget {
+            background-color: #e9ecef;
+        }
+
+        .sidebar-light .user-profile-widget .user-name {
+            color: #212529;
+        }
+
+        .sidebar-dark .user-profile-widget {
+            background-color: #232323;
+        }
+
+        .sidebar-dark .user-profile-widget .user-name {
+            color: white;
+        }
+
+        /* Стили для выпадающих списков - адаптивные под темную и светлую темы */
         .filter-group {
             display: flex;
+            flex-direction: column;
             min-width: 180px;
             margin-bottom: 0;
+            position: relative;
         }
 
         .filter-group label {
@@ -457,36 +519,171 @@ if (!function_exists('hasAdminAccess')) {
             color: var(--text-secondary, #888);
         }
 
-        /* Основний стиль для селектів */
+        /* Основной стиль для селектов */
         .filter-group select {
             padding: 8px 12px;
             border-radius: 6px;
             border: 1px solid var(--border-color);
-            background-color: transparent; /* Прозорий фон */
-            color: var(--text-primary); /* Колір тексту від теми */
+            background-color: transparent;
+            color: var(--text-primary);
             min-width: 150px;
             appearance: none;
             background-position: right 12px center;
             background-repeat: no-repeat;
             background-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
         }
 
-        /* Стрілка вниз для селектів (адаптивна для обох тем) */
+        /* Стрелка вниз для селектов (адаптивная для обоих тем) */
         .filter-group select {
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+            padding-right: 30px; /* Место для стрелки */
         }
 
-        /* Світла тема - додаткові стилі */
+        /* Светлая тема - дополнительные стили */
         :root[data-theme="light"] .filter-group select {
             background-color: #ffffff;
             color: #333333;
             border-color: #d1d5db;
         }
 
-        /* Темна тема - додаткові стилі */
+        :root[data-theme="light"] .filter-group select:hover {
+            background-color: #f9fafb;
+            border-color: #c0c7d0;
+        }
+
+        :root[data-theme="light"] .filter-group select:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+            outline: none;
+        }
+
+        /* Темная тема - дополнительные стили */
         :root[data-theme="dark"] .filter-group select {
             background-color: #333333;
             color: #e2e8f0;
+            border-color: #4a5568;
+        }
+
+        :root[data-theme="dark"] .filter-group select:hover {
+            background-color: #3a3a3a;
+            border-color: #5a6678;
+        }
+
+        :root[data-theme="dark"] .filter-group select:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+            outline: none;
+        }
+
+        /* Стили для выпадающего меню пользователя */
+        .user-dropdown {
+            position: relative;
+            margin-left: 10px;
+        }
+
+        .user-dropdown-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: none;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            color: var(--text-primary);
+        }
+
+        .user-dropdown-btn:hover {
+            background-color: rgba(128, 128, 128, 0.1);
+        }
+
+        .user-avatar-small {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .user-dropdown-btn .user-name {
+            font-weight: 500;
+            display: none; /* скрыто на мобильных */
+        }
+
+        .user-dropdown-btn i {
+            color: var(--text-secondary);
+        }
+
+        .user-dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            width: 200px;
+            padding: 8px 0;
+            margin-top: 5px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: all 0.2s;
+            z-index: 100;
+            border: 1px solid var(--border-color);
+        }
+
+        .user-dropdown-menu.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .user-dropdown-menu a {
+            display: flex;
+            align-items: center;
+            padding: 10px 15px;
+            color: var(--text-primary);
+            text-decoration: none;
+            gap: 10px;
+            transition: background-color 0.2s;
+        }
+
+        .user-dropdown-menu a:hover {
+            background-color: rgba(128, 128, 128, 0.1);
+        }
+
+        .user-dropdown-menu i {
+            color: var(--text-secondary);
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background-color: var(--border-color);
+            margin: 8px 0;
+        }
+
+        @media (min-width: 768px) {
+            .user-dropdown-btn .user-name {
+                display: block;
+            }
+        }
+
+        /* Стили для светлой и темной темы */
+        :root[data-theme="light"] .user-dropdown-menu {
+            background-color: #ffffff;
+            border-color: #eaeaea;
+        }
+
+        :root[data-theme="dark"] .user-dropdown-menu {
+            background-color: #1e1e1e;
             border-color: #4a5568;
         }
 
@@ -510,15 +707,6 @@ if (!function_exists('hasAdminAccess')) {
 
         :root[data-theme="dark"] .filter-group::before {
             filter: brightness(0) invert(1) opacity(0.6);
-        }
-
-        /* Іконки для фільтрів статусів */
-        .filter-status::before {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z'/%3E%3Cpath d='M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z'/%3E%3C/svg%3E");
-        }
-
-        .filter-sort::before {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M10.082 5.629 9.664 7H8.598l1.789-5.332h1.234L13.402 7h-1.12l-.419-1.371h-1.781zm1.57-.785L11 2.687h-.047l-.652 2.157h1.351z'/%3E%3Cpath d='M12.96 14H9.028v-.691l2.579-3.72v-.054H9.098v-.867h3.785v.691l-2.567 3.72v.054h2.645V14zM4.5 2.5a.5.5 0 0 0-1 0v9.793l-1.146-1.147a.5.5 0 0 0-.708.708l2 1.999.007.007a.497.497 0 0 0 .7-.006l2-2a.5.5 0 0 0-.707-.708L4.5 12.293V2.5z'/%3E%3C/svg%3E");
         }
 
         /* Стилі для пошуку */
@@ -1578,10 +1766,15 @@ if (!function_exists('hasAdminAccess')) {
                     <i class="bi <?php echo $currentTheme === 'dark' ? 'bi-sun' : 'bi-moon'; ?>"></i>
                 </button>
 
+                <!-- Обновленный выпадающий список пользователя -->
                 <div class="user-dropdown">
                     <button class="user-dropdown-btn">
                         <div class="user-avatar-small">
-                            <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                            <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>
+                                <img src="<?php echo safeEcho($user['profile_pic']); ?>" alt="Фото профілю" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                            <?php else: ?>
+                                <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                            <?php endif; ?>
                         </div>
                         <span class="user-name"><?php echo safeEcho($user['username']); ?></span>
                         <i class="bi bi-chevron-down"></i>
@@ -1590,7 +1783,6 @@ if (!function_exists('hasAdminAccess')) {
                         <a href="/dah/user/profile.php"><i class="bi bi-person"></i> Профіль</a>
                         <a href="/dah/user/settings.php"><i class="bi bi-gear"></i> Налаштування</a>
                         <div class="dropdown-divider"></div>
-                        <!-- Видалено блок з вибором теми у випадаючому меню -->
                         <a href="/logout.php"><i class="bi bi-box-arrow-right"></i> Вихід</a>
                     </div>
                 </div>
@@ -1829,7 +2021,7 @@ if (!function_exists('hasAdminAccess')) {
                             </a>
                         </div>
 
-                        <!-- Оновлені фільтри для списку замовлень -->
+                        <!-- Оновлені фільтри для списку замовлень с улучшенным выпадающим списком -->
                         <form method="get" action="orders.php" class="filters-form">
                             <div class="filter-group filter-status">
                                 <label for="status-filter">Статус:</label>
@@ -2000,6 +2192,12 @@ if (!function_exists('hasAdminAccess')) {
         const overlay = document.getElementById('overlay');
         const themeSwitchBtn = document.getElementById('themeSwitchBtn');
 
+        // Установка начальной темы для сайдбара
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        if (sidebar) {
+            sidebar.classList.add(currentTheme === 'dark' ? 'sidebar-dark' : 'sidebar-light');
+        }
+
         // Перевіряємо, чи є збережений стан сайдбара
         const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
 
@@ -2103,6 +2301,26 @@ if (!function_exists('hasAdminAccess')) {
 
             // Змінюємо тему безпосередньо
             htmlElement.setAttribute('data-theme', newTheme);
+
+            // Применяем тему к боковой панели
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                // Удаляем все классы тем
+                sidebar.classList.remove('sidebar-light', 'sidebar-dark');
+                // Добавляем класс в зависимости от новой темы
+                sidebar.classList.add(newTheme === 'dark' ? 'sidebar-dark' : 'sidebar-light');
+            }
+
+            // Обновляем также виджет пользователя в сайдбаре
+            const userProfileWidget = document.querySelector('.user-profile-widget');
+            if (userProfileWidget) {
+                userProfileWidget.style.backgroundColor = newTheme === 'light' ? '#e9ecef' : '#232323';
+
+                const userName = userProfileWidget.querySelector('.user-name');
+                if (userName) {
+                    userName.style.color = newTheme === 'light' ? '#212529' : 'white';
+                }
+            }
 
             // Зберігаємо стан в localStorage і cookie
             localStorage.setItem('theme', newTheme);
@@ -2268,22 +2486,9 @@ if (!function_exists('hasAdminAccess')) {
         });
 
         // Додаємо поточну дату і час у консоль для розробників
-        console.info("Система запущена: 2025-05-13 19:11:06");
+        console.info("Система запущена: 2025-05-20 20:24:06");
         console.info("Поточний користувач: 1GodofErath");
     });
-    // Застосовуємо тему до елементів сайдбару
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    if (currentTheme) {
-        const userProfileWidget = document.querySelector('.user-profile-widget');
-        if (userProfileWidget) {
-            userProfileWidget.style.backgroundColor = currentTheme === 'light' ? '#e9ecef' : '#232323';
-
-            const userName = userProfileWidget.querySelector('.user-name');
-            if (userName) {
-                userName.style.color = currentTheme === 'light' ? '#212529' : 'white';
-            }
-        }
-    }
 </script>
 </body>
 </html>
