@@ -1,478 +1,1486 @@
 <?php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
-session_start();
-/**
- * Lagodi Service - Профіль користувача
- * Версія: 1.0.0
- * Дата останнього оновлення: 2025-04-27 11:18:55
- * Автор: 1GodofErath
- */
 
-// Підключення необхідних файлів з абсолютними шляхами
-require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/confi/database.php'; // Виправлений шлях включає /dah/
-require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/include/functions.php';
-require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/include/auth.php';
-require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/include/session.php';
-// Перевірка авторизації через JavaScript щоб уникнути Headers already sent
+// Підключення необхідних файлів
+require_once '../../dah/confi/database.php';
+require_once '../../dah/include/session.php';
+require_once '../../dah/include/functions.php';
+require_once '../../dah/include/auth.php';
+
+// Перевірка авторизації
 if (!isLoggedIn()) {
-    echo '<script>window.location.href = "/login.php";</script>';
+    header("Location: /login.php");
     exit;
 }
-
 
 // Отримання поточного користувача
 $user = getCurrentUser();
 
 // Перевірка, чи заблокований користувач
 if (isUserBlocked($user['id'])) {
-    echo '<script>window.location.href = "/logout.php?reason=blocked";</script>';
+    header("Location: /logout.php?reason=blocked");
     exit;
 }
 
-// Отримання непрочитаних повідомлень
-$unread_count = getUnreadNotificationsCount($user['id']);
+// Встановлення теми
+if (isset($_GET['theme'])) {
+    $theme = $_GET['theme'] === 'dark' ? 'dark' : 'light';
+    setcookie('theme', $theme, time() + (86400 * 30), "/"); // 30 днів
+    $_COOKIE['theme'] = $theme; // Встановлюємо значення одразу для поточного запиту
 
-// Отримання додаткових полів користувача
-$additional_fields = getUserAdditionalFields($user['id']);
+    // Отримуємо поточний URL
+    $currentUrl = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-// Встановлюємо заголовок сторінки
-$page_title = "Профіль користувача";
+    // Перенаправлення назад на поточну сторінку без параметра theme
+    $queryParams = $_GET;
+    unset($queryParams['theme']);
+
+    $queryString = '';
+    if (!empty($queryParams)) {
+        $queryString = '?' . http_build_query($queryParams);
+    }
+
+    header("Location: $currentUrl$queryString");
+    exit;
+}
+
+$currentTheme = isset($_COOKIE['theme']) ? $_COOKIE['theme'] : 'dark'; // Темна тема за замовчуванням
+
+// База даних
+$database = new Database();
+$db = $database->getConnection();
+
+// Ініціалізація змінних для повідомлень
+$successMessage = '';
+$errorMessage = '';
+
+// Отримання статистики замовлень користувача
+try {
+    // Загальна кількість замовлень
+    $orderCountQuery = "SELECT COUNT(*) as total_orders FROM orders WHERE user_id = :user_id";
+    $orderCountStmt = $db->prepare($orderCountQuery);
+    $orderCountStmt->bindParam(':user_id', $user['id']);
+    $orderCountStmt->execute();
+    $totalOrders = $orderCountStmt->fetch(PDO::FETCH_ASSOC)['total_orders'];
+
+    // Кількість коментарів до замовлень
+    $commentsQuery = "SELECT COUNT(*) as total_comments FROM comments 
+                      WHERE order_id IN (SELECT id FROM orders WHERE user_id = :user_id)";
+    $commentsStmt = $db->prepare($commentsQuery);
+    $commentsStmt->bindParam(':user_id', $user['id']);
+    $commentsStmt->execute();
+    $totalComments = $commentsStmt->fetch(PDO::FETCH_ASSOC)['total_comments'];
+
+    // Кількість нових коментарів (непрочитаних)
+    $newCommentsQuery = "SELECT COUNT(*) as new_comments FROM comments 
+                        WHERE order_id IN (SELECT id FROM orders WHERE user_id = :user_id) 
+                        AND is_read = 0 AND user_id != :user_id";
+    $newCommentsStmt = $db->prepare($newCommentsQuery);
+    $newCommentsStmt->bindParam(':user_id', $user['id']);
+    $newCommentsStmt->execute();
+    $newComments = $newCommentsStmt->fetch(PDO::FETCH_ASSOC)['new_comments'];
+
+    // Статистика замовлень за статусами
+    $orderStatsQuery = "SELECT status, COUNT(*) as count FROM orders 
+                      WHERE user_id = :user_id GROUP BY status";
+    $orderStatsStmt = $db->prepare($orderStatsQuery);
+    $orderStatsStmt->bindParam(':user_id', $user['id']);
+    $orderStatsStmt->execute();
+    $orderStats = $orderStatsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $statusCounts = [
+        'new' => 0,
+        'in_progress' => 0,
+        'waiting' => 0,
+        'waiting_delivery' => 0,
+        'completed' => 0,
+        'canceled' => 0
+    ];
+
+    foreach ($orderStats as $stat) {
+        switch (trim($stat['status'])) {
+            case 'Новий':
+                $statusCounts['new'] = $stat['count'];
+                break;
+            case 'В роботі':
+                $statusCounts['in_progress'] = $stat['count'];
+                break;
+            case 'Очікується':
+                $statusCounts['waiting'] = $stat['count'];
+                break;
+            case 'Очікується поставки товару':
+                $statusCounts['waiting_delivery'] = $stat['count'];
+                break;
+            case 'Завершено':
+            case 'Виконано':
+                $statusCounts['completed'] += $stat['count']; // Використовуємо += для додавання
+                break;
+            case 'Не можливо виконати':
+            case 'Скасовано':
+                $statusCounts['canceled'] += $stat['count']; // Використовуємо += для додавання
+                break;
+        }
+    }
+
+    // Отримання дати реєстрації
+    $registrationDateQuery = "SELECT created_at FROM users WHERE id = :user_id";
+    $registrationDateStmt = $db->prepare($registrationDateQuery);
+    $registrationDateStmt->bindParam(':user_id', $user['id']);
+    $registrationDateStmt->execute();
+    $registrationDate = $registrationDateStmt->fetch(PDO::FETCH_ASSOC)['created_at'];
+
+    // Останні 5 замовлень
+    $latestOrdersQuery = "SELECT o.*, c.name as category_name 
+                      FROM orders o
+                      LEFT JOIN service_categories c ON o.category_id = c.id 
+                      WHERE o.user_id = :user_id 
+                      ORDER BY o.created_at DESC LIMIT 5";
+    $latestOrdersStmt = $db->prepare($latestOrdersQuery);
+    $latestOrdersStmt->bindParam(':user_id', $user['id']);
+    $latestOrdersStmt->execute();
+    $latestOrders = $latestOrdersStmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) {
+    $errorMessage = "Помилка при отриманні статистики: " . $e->getMessage();
+}
+
+// Функція для безпечного виведення тексту
+function safeEcho($text, $default = '') {
+    return htmlspecialchars($text ?? $default, ENT_QUOTES, 'UTF-8');
+}
+
+// Функція для форматування дати
+function formatDate($dateString) {
+    $date = new DateTime($dateString);
+    return $date->format('d.m.Y H:i');
+}
+
+// Функція для отримання класу статусу замовлення
+function getStatusClass($status) {
+    $status = trim($status); // Видаляємо пробіли для точного порівняння
+
+    switch($status) {
+        case 'Новий':
+            return 'status-new';
+        case 'В обробці':
+            return 'status-processing';
+        case 'В роботі':
+            return 'status-in-progress';
+        case 'Виконано':
+        case 'Завершено':
+            return 'status-completed';
+        case 'Очікується поставки товару':
+            return 'status-waiting-delivery';
+        case 'Очікується':
+            return 'status-waiting';
+        case 'Скасовано':
+        case 'Не можливо виконати':
+            return 'status-canceled';
+        default:
+            return 'status-default';
+    }
+}
+
+// Функція для обчислення часу з дати реєстрації
+function getUserAge($registrationDate) {
+    $registration = new DateTime($registrationDate);
+    $now = new DateTime();
+    $diff = $registration->diff($now);
+
+    if ($diff->y > 0) {
+        return $diff->y . ' ' . getYearText($diff->y) . ' ' . $diff->m . ' ' . getMonthText($diff->m);
+    } elseif ($diff->m > 0) {
+        return $diff->m . ' ' . getMonthText($diff->m) . ' ' . $diff->d . ' ' . getDayText($diff->d);
+    } else {
+        return $diff->d . ' ' . getDayText($diff->d);
+    }
+}
+
+function getYearText($years) {
+    if ($years == 1) return 'рік';
+    if ($years >= 2 && $years <= 4) return 'роки';
+    return 'років';
+}
+
+function getMonthText($months) {
+    if ($months == 1) return 'місяць';
+    if ($months >= 2 && $months <= 4) return 'місяці';
+    return 'місяців';
+}
+
+function getDayText($days) {
+    if ($days == 1 || $days == 21 || $days == 31) return 'день';
+    if (($days >= 2 && $days <= 4) || ($days >= 22 && $days <= 24)) return 'дні';
+    return 'днів';
+}
 ?>
 
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="uk" data-theme="<?php echo $currentTheme; ?>">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $page_title; ?> - Lagodi Service</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Мій профіль - Lagodi Service</title>
+
+    <!-- Блокуємо рендеринг сторінки до встановлення теми -->
+    <script>
+        (function() {
+            // Check localStorage first
+            let theme = localStorage.getItem('theme');
+
+            // If not in localStorage, check cookies
+            if (!theme) {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.startsWith('theme=')) {
+                        theme = cookie.substring(6);
+                        break;
+                    }
+                }
+            }
+
+            // If still no theme, use the system preference or default to dark
+            if (!theme) {
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    theme = 'dark';
+                } else {
+                    theme = 'light';
+                }
+            }
+
+            // Apply theme to document
+            document.documentElement.setAttribute('data-theme', theme);
+
+            // Також застосовуємо тему до сайдбару при завантаженні
+            document.addEventListener('DOMContentLoaded', function() {
+                const sidebar = document.getElementById('sidebar');
+                if (sidebar) {
+                    sidebar.setAttribute('data-theme', theme);
+                }
+
+                // Встановлюємо відповідні стилі для компонентів користувача
+                const userProfileWidget = document.querySelector('.user-profile-widget');
+                if (userProfileWidget && theme === 'light') {
+                    userProfileWidget.style.backgroundColor = '#e9ecef';
+
+                    const userName = userProfileWidget.querySelector('.user-name');
+                    if (userName) {
+                        userName.style.color = '#212529';
+                    }
+                }
+            });
+        })();
+    </script>
 
     <!-- CSS файли -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="../style/dahm/dah1.css">
-    <link rel="stylesheet" href="../style/dahm/dash2.css">
+    <link rel="stylesheet" href="../../style/dahm/user_dashboard.css">
+    <link rel="stylesheet" href="../../style/dahm/orders.css">
 
-    <!-- Підключення теми користувача -->
-    <?php if (isset($user['theme']) && $user['theme'] == 'dark'): ?>
-        <link rel="stylesheet" href="../style/dahm/themes/dark.css">
-    <?php else: ?>
-        <link rel="stylesheet" href="../style/dahm/themes/light.css">
-    <?php endif; ?>
+    <style>
+        /* Стилі для сторінки профілю */
+        .profile-container {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .profile-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Ліва колонка - інформація про користувача */
+        .user-profile-card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            padding: 25px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .user-profile-avatar {
+            width: 120px;
+            height: 120px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            font-weight: 600;
+            margin: 0 auto 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .user-profile-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: var(--text-primary);
+        }
+
+        .user-profile-role {
+            color: var(--primary-color);
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+            display: inline-block;
+            background-color: rgba(52, 152, 219, 0.1);
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+
+        .user-profile-id {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 25px;
+            gap: 5px;
+            color: var(--text-secondary, #888);
+            font-size: 0.85rem;
+        }
+
+        .user-profile-info {
+            text-align: left;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .user-profile-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .user-profile-item i {
+            width: 20px;
+            color: var(--primary-color);
+            margin-right: 10px;
+        }
+
+        .user-profile-label {
+            font-weight: 500;
+            width: 30%;
+            color: var(--text-secondary, #888);
+        }
+
+        .user-profile-value {
+            flex: 1;
+            word-break: break-word;
+        }
+
+        .user-stats {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .user-stat-item {
+            background-color: rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .user-stat-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .user-stat-number {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: var(--primary-color);
+        }
+
+        .user-stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary, #888);
+        }
+
+        .user-actions {
+            margin-top: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .user-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            gap: 8px;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        /* Оновлені стилі для кнопки редагування профілю при різних темах */
+        .user-action-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        /* Світла тема - забезпечує контраст для кнопки */
+        :root[data-theme="light"] .user-action-primary {
+            background-color: #1d9bf0; /* Синій кольор, як на скріншоті */
+            color: white;
+        }
+
+        :root[data-theme="light"] .user-action-primary:hover {
+            background-color: #0c7abf; /* Темніший синій при наведенні */
+            transform: translateY(-2px);
+        }
+
+        /* Темна тема - забезпечує належний вигляд кнопки */
+        :root[data-theme="dark"] .user-action-primary {
+            background-color: #1d9bf0;
+            color: white;
+        }
+
+        :root[data-theme="dark"] .user-action-primary:hover {
+            background-color: #0c7abf;
+            transform: translateY(-2px);
+        }
+
+        .user-action-secondary {
+            background-color: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .user-action-secondary:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+            transform: translateY(-2px);
+        }
+
+        /* Права колонка - статистика та активність */
+        .user-activity-card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .activity-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+        }
+
+        .activity-title i {
+            margin-right: 10px;
+            color: var(--primary-color);
+        }
+
+        .activity-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 992px) {
+            .activity-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 576px) {
+            .activity-stats {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .activity-stat-item {
+            background-color: rgba(0, 0, 0, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .activity-stat-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .activity-stat-icon {
+            width: 45px;
+            height: 45px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 1.4rem;
+        }
+
+        .activity-stat-icon-blue {
+            background-color: rgba(52, 152, 219, 0.2);
+            color: #3498db;
+        }
+
+        .activity-stat-icon-green {
+            background-color: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+        }
+
+        .activity-stat-icon-purple {
+            background-color: rgba(142, 68, 173, 0.2);
+            color: #8e44ad;
+        }
+
+        .activity-stat-icon-orange {
+            background-color: rgba(243, 156, 18, 0.2);
+            color: #f39c12;
+        }
+
+        .activity-stat-icon-red {
+            background-color: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+        }
+
+        .activity-stat-icon-teal {
+            background-color: rgba(26, 188, 156, 0.2);
+            color: #1abc9c;
+        }
+
+        .activity-stat-content {
+            flex: 1;
+        }
+
+        .activity-stat-number {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+
+        .activity-stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary, #888);
+        }
+
+        .chart-container {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .chart-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--text-primary);
+        }
+
+        .status-progress-container {
+            margin-bottom: 30px;
+        }
+
+        .status-progress-item {
+            margin-bottom: 12px;
+        }
+
+        .status-progress-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .status-progress-label {
+            font-weight: 500;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .status-progress-value {
+            font-weight: 600;
+            color: var(--primary-color);
+            font-size: 0.9rem;
+        }
+
+        .status-progress-bar {
+            height: 8px;
+            border-radius: 4px;
+            background-color: rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .status-progress-fill {
+            height: 100%;
+            border-radius: 4px;
+        }
+
+        .status-new-fill {
+            background-color: #f39c12;
+        }
+
+        .status-in-progress-fill {
+            background-color: #3498db;
+        }
+
+        .status-waiting-fill {
+            background-color: #8e44ad;
+        }
+
+        .status-waiting-delivery-fill {
+            background-color: #ff9800;
+        }
+
+        .status-completed-fill {
+            background-color: #2ecc71;
+        }
+
+        .status-canceled-fill {
+            background-color: #e74c3c;
+        }
+
+        /* Нижче статистики - останні замовлення */
+        .recent-orders {
+            margin-top: 30px;
+        }
+
+        .orders-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .orders-table th,
+        .orders-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .orders-table th {
+            font-weight: 600;
+            color: var(--text-secondary, #888);
+            font-size: 0.9rem;
+        }
+
+        .orders-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .orders-table tr:hover td {
+            background-color: rgba(0, 0, 0, 0.02);
+        }
+
+        .order-id {
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .order-date {
+            font-size: 0.85rem;
+            color: var(--text-secondary, #888);
+        }
+
+        .order-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: color 0.2s;
+        }
+
+        .order-link:hover {
+            color: var(--primary-color-dark, #2980b9);
+            text-decoration: underline;
+        }
+
+        /* Стилі для бейджів статусу */
+        .status-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-new {
+            background-color: #f39c12;
+            color: white;
+        }
+
+        .status-in-progress {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .status-waiting {
+            background-color: #8e44ad;
+            color: white;
+        }
+
+        .status-waiting-delivery {
+            background-color: #ff9800;
+            color: white;
+        }
+
+        .status-completed {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        .status-canceled {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        /* Стилі для повідомлень */
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-success {
+            background-color: rgba(46, 204, 113, 0.1);
+            border: 1px solid rgba(46, 204, 113, 0.3);
+            color: #2ecc71;
+        }
+
+        .alert-danger {
+            background-color: rgba(231, 76, 60, 0.1);
+            border: 1px solid rgba(231, 76, 60, 0.3);
+            color: #e74c3c;
+        }
+
+        /* Плавний перехід для зміни стилів при зміні теми */
+        .theme-transition {
+            transition: color 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        /* Оновлені стилі для сайдбару з підтримкою світлої/темної теми */
+        .sidebar {
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+
+        :root[data-theme="light"] .sidebar {
+            background-color: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+        }
+
+        :root[data-theme="light"] .logo {
+            color: #1d9bf0;
+        }
+
+        :root[data-theme="light"] .nav-link {
+            color: #4b5563;
+        }
+
+        :root[data-theme="light"] .nav-link:hover {
+            background-color: #edf2f7;
+            color: #1a202c;
+        }
+
+        :root[data-theme="light"] .nav-link.active {
+            background-color: #e6f7ff;
+            color: #1d9bf0;
+        }
+
+        :root[data-theme="light"] .nav-divider {
+            background-color: #dee2e6;
+        }
+
+        :root[data-theme="light"] .sidebar-header {
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        :root[data-theme="light"] .user-profile-widget {
+            background-color: #e9ecef;
+        }
+
+        :root[data-theme="light"] .user-profile-widget .user-name {
+            color: #212529;
+        }
+
+        :root[data-theme="light"] .toggle-btn {
+            color: #4b5563;
+        }
+
+        :root[data-theme="light"] .user-avatar-placeholder {
+            background-color: #7a3bdf;
+            color: white;
+        }
+
+        /* Темна тема для сайдбару (вже повинна бути за замовчуванням) */
+        :root[data-theme="dark"] .user-profile-widget {
+            background-color: #232323;
+        }
+
+        :root[data-theme="dark"] .user-profile-widget .user-name {
+            color: white;
+        }
+
+        :root[data-theme="dark"] .user-avatar-placeholder {
+            background-color: #7a3bdf;
+            color: white;
+        }
+
+        :root[data-theme="dark"] .logo {
+            color: #1d9bf0;
+        }
+
+        /* Стилізований компонент користувача в лівому сайдбарі */
+        .user-profile-widget {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background-color: #232323;
+            border-radius: 10px;
+            width: 100%;
+            margin-bottom: 10px;
+            transition: background-color 0.2s ease;
+        }
+
+        .user-profile-widget:hover {
+            background-color: #2a2a2a;
+        }
+
+        .user-profile-widget .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .user-profile-widget .user-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .user-profile-widget .user-name {
+            font-size: 16px;
+            font-weight: 500;
+            color: white;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-grow: 1;
+        }
+
+        /* Додаткова адаптивність */
+        @media (max-width: 576px) {
+            .activity-stat-item {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .activity-stat-icon {
+                margin-right: 0;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
 </head>
 <body>
-<!-- Меню навігації -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-    <div class="container">
-        <a class="navbar-brand" href="/dah/dashboard.php">Lagodi Service</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav me-auto">
-                <li class="nav-item">
-                    <a class="nav-link" href="/dah/user/dashboard.php">
-                        <i class="bi bi-speedometer2"></i> Дашборд
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/dah/user/orders.php">
-                        <i class="bi bi-list-check"></i> Мої замовлення
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link active" href="/dah/user/profile.php">
-                        <i class="bi bi-person"></i> Профіль
-                    </a>
-                </li>
-            </ul>
-            <ul class="navbar-nav">
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" id="notificationsDropdown" role="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-bell"></i> Сповіщення
-                        <?php if ($unread_count > 0): ?>
-                            <span class="badge bg-danger"><?php echo $unread_count; ?></span>
-                        <?php endif; ?>
-                    </a>
-                    <div class="dropdown-menu dropdown-menu-end notification-dropdown" aria-labelledby="notificationsDropdown">
-                        <!-- Вміст буде динамічно завантажено через JavaScript -->
-                        <h6 class="dropdown-header">Завантаження сповіщень...</h6>
-                    </div>
-                </li>
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-person-circle"></i>
-                        <?php echo htmlspecialchars($user['username']); ?>
-                    </a>
-                    <div class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                        <a class="dropdown-item" href="/dah/user/profile.php">
-                            <i class="bi bi-person"></i> Профіль
-                        </a>
-                        <a class="dropdown-item" href="/dah/user/settings.php">
-                            <i class="bi bi-gear"></i> Налаштування
-                        </a>
-                        <div class="dropdown-divider"></div>
-                        <a class="dropdown-item" href="#" id="logoutButton">
-                            <i class="bi bi-box-arrow-right"></i> Вихід
-                        </a>
-                    </div>
-                </li>
-            </ul>
+<div class="wrapper" id="mainWrapper">
+    <!-- Сайдбар (ліва панель) з налаштувань -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/dah/dashboard.php" class="logo">Lagodi Service</a>
+            <button id="sidebarToggle" class="toggle-btn">
+                <i class="bi bi-arrow-left"></i>
+            </button>
         </div>
-    </div>
-</nav>
 
-<!-- Основний контент -->
-<div class="container mt-4">
-    <div class="row">
-        <!-- Бокова панель -->
-        <div class="col-lg-3 mb-4">
-            <div class="card">
-                <div class="card-body text-center">
-                    <div class="user-avatar mb-3">
-                        <?php if (!empty($user['profile_pic'])): ?>
-                            <img src="<?php echo htmlspecialchars($user['profile_pic']); ?>" alt="Фото профілю" class="rounded-circle img-fluid">
-                        <?php else: ?>
-                            <div class="avatar-placeholder rounded-circle">
-                                <?php echo strtoupper(substr($user['username'], 0, 1)); ?>
-                            </div>
-                        <?php endif; ?>
+        <!-- Новий стилізований компонент користувача -->
+        <div class="user-profile-widget">
+            <div class="user-avatar">
+                <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>
+                    <img src="<?php echo safeEcho($user['profile_pic']); ?>" alt="Фото профілю">
+                <?php else: ?>
+                    <div class="user-avatar-placeholder">
+                        <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
                     </div>
-                    <h5 class="card-title user-name">
-                        <?php echo !empty($user['first_name']) ?
-                            htmlspecialchars($user['first_name'] . ' ' . $user['last_name']) :
-                            htmlspecialchars($user['username']); ?>
-                    </h5>
-                    <p class="card-text text-muted user-email">
-                        <?php echo htmlspecialchars($user['email']); ?>
-                    </p>
-                </div>
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item">
-                        <a href="/dah/user/dashboard.php" class="sidebar-link">
-                            <i class="bi bi-speedometer2"></i> Дашборд
-                        </a>
-                    </li>
-                    <li class="list-group-item">
-                        <a href="/dah/user/orders.php" class="sidebar-link">
-                            <i class="bi bi-list-check"></i> Мої замовлення
-                        </a>
-                    </li>
-                    <li class="list-group-item">
-                        <a href="/dah/user/notifications.php" class="sidebar-link">
-                            <i class="bi bi-bell"></i> Сповіщення
-                            <?php if ($unread_count > 0): ?>
-                                <span class="badge bg-danger float-end"><?php echo $unread_count; ?></span>
+                <?php endif; ?>
+            </div>
+            <div class="user-name">
+                <?php echo safeEcho($user['username']); ?>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="/dah/dashboard.php" class="nav-link">
+                <i class="bi bi-speedometer2"></i>
+                <span>Дашборд</span>
+            </a>
+            <a href="/dah/user/create-order.php" class="nav-link">
+                <i class="bi bi-plus-circle"></i>
+                <span>Нове замовлення</span>
+            </a>
+            <a href="/dah/user/orders.php" class="nav-link">
+                <i class="bi bi-list-check"></i>
+                <span>Мої замовлення</span>
+            </a>
+            <a href="/dah/user/notifications.php" class="nav-link">
+                <i class="bi bi-bell"></i>
+                <span>Коментарі</span>
+                <?php if ($newComments > 0): ?>
+                    <span class="notification-badge"><?php echo $newComments; ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="/dah/user/profile.php" class="nav-link active">
+                <i class="bi bi-person"></i>
+                <span>Профіль</span>
+            </a>
+            <a href="/dah/user/settings.php" class="nav-link">
+                <i class="bi bi-gear"></i>
+                <span>Налаштування</span>
+            </a>
+            <a href="/logout.php" class="nav-link logout">
+                <i class="bi bi-box-arrow-right"></i>
+                <span>Вихід</span>
+            </a>
+            <div class="nav-divider"></div>
+        </nav>
+    </aside>
+
+    <!-- Основний контент -->
+    <main class="main-content" id="mainContent">
+        <header class="main-header">
+            <button id="menuToggle" class="menu-toggle">
+                <i class="bi bi-list"></i>
+            </button>
+            <div class="header-title">
+                <h1>Мій профіль</h1>
+            </div>
+            <div class="header-actions">
+                <button id="themeSwitchBtn" class="theme-switch-btn">
+                    <i class="bi <?php echo $currentTheme === 'dark' ? 'bi-sun' : 'bi-moon'; ?>"></i>
+                </button>
+
+                <div class="user-dropdown">
+                    <button class="user-dropdown-btn">
+                        <div class="user-avatar-small">
+                            <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>
+                                <img src="<?php echo safeEcho($user['profile_pic']); ?>" alt="Фото профілю" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                            <?php else: ?>
+                                <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
                             <?php endif; ?>
-                        </a>
-                    </li>
-                    <li class="list-group-item">
-                        <a href="/dah/user/profile.php" class="sidebar-link active">
-                            <i class="bi bi-person"></i> Профіль
-                        </a>
-                    </li>
-                    <li class="list-group-item">
-                        <a href="/dah/user/settings.php" class="sidebar-link">
-                            <i class="bi bi-gear"></i> Налаштування
-                        </a>
-                    </li>
-                    <li class="list-group-item">
-                        <a href="#" class="sidebar-link text-danger" id="sidebarLogoutButton">
-                            <i class="bi bi-box-arrow-right"></i> Вихід
-                        </a>
-                    </li>
-                </ul>
-            </div>
-
-            <!-- Тема сайту -->
-            <div class="card mt-4">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Тема сайту</h5>
+                        </div>
+                        <span class="user-name"><?php echo safeEcho($user['username']); ?></span>
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                    <div class="user-dropdown-menu">
+                        <a href="/dah/user/profile.php"><i class="bi bi-person"></i> Профіль</a>
+                        <a href="/dah/user/settings.php"><i class="bi bi-gear"></i> Налаштування</a>
+                        <div class="dropdown-divider"></div>
+                        <a href="/logout.php"><i class="bi bi-box-arrow-right"></i> Вихід</a>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <button type="button" class="btn btn-outline-primary theme-switcher" data-theme="light">
-                            <i class="bi bi-sun"></i> Світла
-                        </button>
-                        <button type="button" class="btn btn-outline-dark theme-switcher" data-theme="dark">
-                            <i class="bi bi-moon"></i> Темна
-                        </button>
+            </div>
+        </header>
+
+        <!-- Сповіщення -->
+        <?php if ($successMessage): ?>
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> <?php echo $successMessage; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($errorMessage): ?>
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> <?php echo $errorMessage; ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="content-wrapper">
+            <div class="section-container">
+                <div class="profile-container">
+                    <!-- Ліва колонка - картка профілю -->
+                    <div class="user-profile-card">
+                        <div class="user-profile-avatar">
+                            <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>
+                                <img src="<?php echo safeEcho($user['profile_pic']); ?>" alt="Фото профілю" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">
+                            <?php else: ?>
+                                <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                            <?php endif; ?>
+                        </div>
+                        <div class="user-profile-name"><?php echo safeEcho($user['username']); ?></div>
+                        <div class="user-profile-role">
+                            <?php
+                            $roleName = "Користувач";
+                            if (isset($user['role']) && $user['role'] === 'admin') {
+                                $roleName = "Адміністратор";
+                            } elseif (isset($user['role']) && $user['role'] === 'manager') {
+                                $roleName = "Менеджер";
+                            }
+                            echo $roleName;
+                            ?>
+                        </div>
+                        <div class="user-profile-id">
+                            <i class="bi bi-person-badge"></i>
+                            ID: <?php echo $user['id']; ?>
+                        </div>
+
+                        <div class="user-stats">
+                            <div class="user-stat-item">
+                                <div class="user-stat-number"><?php echo $totalOrders; ?></div>
+                                <div class="user-stat-label">Всього замовлень</div>
+                            </div>
+                            <div class="user-stat-item">
+                                <div class="user-stat-number"><?php echo $totalComments; ?></div>
+                                <div class="user-stat-label">Коментарів</div>
+                            </div>
+                        </div>
+
+                        <div class="user-profile-info">
+                            <div class="user-profile-item">
+                                <i class="bi bi-envelope"></i>
+                                <div class="user-profile-label">Email:</div>
+                                <div class="user-profile-value"><?php echo safeEcho($user['email']); ?></div>
+                            </div>
+                            <div class="user-profile-item">
+                                <i class="bi bi-telephone"></i>
+                                <div class="user-profile-label">Телефон:</div>
+                                <div class="user-profile-value">
+                                    <?php echo !empty($user['phone']) ? safeEcho($user['phone']) : 'Не вказано'; ?>
+                                </div>
+                            </div>
+                            <div class="user-profile-item">
+                                <i class="bi bi-calendar-check"></i>
+                                <div class="user-profile-label">Зареєстрований:</div>
+                                <div class="user-profile-value">
+                                    <?php echo formatDate($registrationDate); ?>
+                                </div>
+                            </div>
+                            <div class="user-profile-item">
+                                <i class="bi bi-clock-history"></i>
+                                <div class="user-profile-label">З нами:</div>
+                                <div class="user-profile-value">
+                                    <?php echo getUserAge($registrationDate); ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="user-actions">
+                            <a href="settings.php" class="user-action-btn user-action-primary">
+                                <i class="bi bi-pencil-square"></i> Редагувати профіль
+                            </a>
+                            <a href="orders.php" class="user-action-btn user-action-secondary">
+                                <i class="bi bi-list-check"></i> Мої замовлення
+                            </a>
+                            <a href="create-order.php" class="user-action-btn user-action-secondary">
+                                <i class="bi bi-plus-circle"></i> Створити замовлення
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Права колонка - статистика та активність -->
+                    <div class="user-activity-card">
+                        <div class="activity-title">
+                            <i class="bi bi-graph-up"></i> Статистика замовлень
+                        </div>
+
+                        <div class="activity-stats">
+                            <div class="activity-stat-item">
+                                <div class="activity-stat-icon activity-stat-icon-orange">
+                                    <i class="bi bi-hourglass"></i>
+                                </div>
+                                <div class="activity-stat-content">
+                                    <div class="activity-stat-number"><?php echo $statusCounts['new']; ?></div>
+                                    <div class="activity-stat-label">Нові</div>
+                                </div>
+                            </div>
+                            <div class="activity-stat-item">
+                                <div class="activity-stat-icon activity-stat-icon-blue">
+                                    <i class="bi bi-gear"></i>
+                                </div>
+                                <div class="activity-stat-content">
+                                    <div class="activity-stat-number"><?php echo $statusCounts['in_progress']; ?></div>
+                                    <div class="activity-stat-label">В роботі</div>
+                                </div>
+                            </div>
+                            <div class="activity-stat-item">
+                                <div class="activity-stat-icon activity-stat-icon-purple">
+                                    <i class="bi bi-clock"></i>
+                                </div>
+                                <div class="activity-stat-content">
+                                    <div class="activity-stat-number"><?php echo $statusCounts['waiting']; ?></div>
+                                    <div class="activity-stat-label">Очікується</div>
+                                </div>
+                            </div>
+                            <div class="activity-stat-item">
+                                <div class="activity-stat-icon activity-stat-icon-teal">
+                                    <i class="bi bi-truck"></i>
+                                </div>
+                                <div class="activity-stat-content">
+                                    <div class="activity-stat-number"><?php echo $statusCounts['waiting_delivery']; ?></div>
+                                    <div class="activity-stat-label">Очікується поставки</div>
+                                </div>
+                            </div>
+                            <div class="activity-stat-item">
+                                <div class="activity-stat-icon activity-stat-icon-green">
+                                    <i class="bi bi-check-circle"></i>
+                                </div>
+                                <div class="activity-stat-content">
+                                    <div class="activity-stat-number"><?php echo $statusCounts['completed']; ?></div>
+                                    <div class="activity-stat-label">Завершено</div>
+                                </div>
+                            </div>
+                            <div class="activity-stat-item">
+                                <div class="activity-stat-icon activity-stat-icon-red">
+                                    <i class="bi bi-x-circle"></i>
+                                </div>
+                                <div class="activity-stat-content">
+                                    <div class="activity-stat-number"><?php echo $statusCounts['canceled']; ?></div>
+                                    <div class="activity-stat-label">Не можливо виконати</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="chart-container">
+                            <div class="chart-title">Розподіл замовлень за статусом</div>
+
+                            <div class="status-progress-container">
+                                <?php if ($totalOrders > 0): ?>
+                                    <div class="status-progress-item">
+                                        <div class="status-progress-header">
+                                            <div class="status-progress-label">Нові</div>
+                                            <div class="status-progress-value"><?php echo $statusCounts['new']; ?> з <?php echo $totalOrders; ?></div>
+                                        </div>
+                                        <div class="status-progress-bar">
+                                            <div class="status-progress-fill status-new-fill" style="width: <?php echo ($statusCounts['new'] / $totalOrders) * 100; ?>%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="status-progress-item">
+                                        <div class="status-progress-header">
+                                            <div class="status-progress-label">В роботі</div>
+                                            <div class="status-progress-value"><?php echo $statusCounts['in_progress']; ?> з <?php echo $totalOrders; ?></div>
+                                        </div>
+                                        <div class="status-progress-bar">
+                                            <div class="status-progress-fill status-in-progress-fill" style="width: <?php echo ($statusCounts['in_progress'] / $totalOrders) * 100; ?>%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="status-progress-item">
+                                        <div class="status-progress-header">
+                                            <div class="status-progress-label">Очікується</div>
+                                            <div class="status-progress-value"><?php echo $statusCounts['waiting']; ?> з <?php echo $totalOrders; ?></div>
+                                        </div>
+                                        <div class="status-progress-bar">
+                                            <div class="status-progress-fill status-waiting-fill" style="width: <?php echo ($statusCounts['waiting'] / $totalOrders) * 100; ?>%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="status-progress-item">
+                                        <div class="status-progress-header">
+                                            <div class="status-progress-label">Очікується поставки</div>
+                                            <div class="status-progress-value"><?php echo $statusCounts['waiting_delivery']; ?> з <?php echo $totalOrders; ?></div>
+                                        </div>
+                                        <div class="status-progress-bar">
+                                            <div class="status-progress-fill status-waiting-delivery-fill" style="width: <?php echo ($statusCounts['waiting_delivery'] / $totalOrders) * 100; ?>%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="status-progress-item">
+                                        <div class="status-progress-header">
+                                            <div class="status-progress-label">Завершено</div>
+                                            <div class="status-progress-value"><?php echo $statusCounts['completed']; ?> з <?php echo $totalOrders; ?></div>
+                                        </div>
+                                        <div class="status-progress-bar">
+                                            <div class="status-progress-fill status-completed-fill" style="width: <?php echo ($statusCounts['completed'] / $totalOrders) * 100; ?>%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="status-progress-item">
+                                        <div class="status-progress-header">
+                                            <div class="status-progress-label">Не можливо виконати</div>
+                                            <div class="status-progress-value"><?php echo $statusCounts['canceled']; ?> з <?php echo $totalOrders; ?></div>
+                                        </div>
+                                        <div class="status-progress-bar">
+                                            <div class="status-progress-fill status-canceled-fill" style="width: <?php echo ($statusCounts['canceled'] / $totalOrders) * 100; ?>%"></div>
+                                        </div>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="no-data-message">
+                                        <p>Немає даних для відображення статистики.</p>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <div class="recent-orders">
+                            <div class="activity-title">
+                                <i class="bi bi-clock-history"></i> Останні замовлення
+                            </div>
+
+                            <?php if (!empty($latestOrders)): ?>
+                                <table class="orders-table">
+                                    <thead>
+                                    <tr>
+                                        <th>№</th>
+                                        <th>Послуга</th>
+                                        <th>Статус</th>
+                                        <th>Дата</th>
+                                        <th></th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php foreach ($latestOrders as $order): ?>
+                                        <tr>
+                                            <td class="order-id">#<?php echo $order['id']; ?></td>
+                                            <td><?php echo safeEcho($order['service']); ?></td>
+                                            <td>
+                                                <span class="status-badge <?php echo getStatusClass($order['status']); ?>">
+                                                    <?php echo safeEcho($order['status']); ?>
+                                                </span>
+                                            </td>
+                                            <td class="order-date"><?php echo formatDate($order['created_at']); ?></td>
+                                            <td>
+                                                <a href="orders.php?id=<?php echo $order['id']; ?>" class="order-link">
+                                                    <i class="bi bi-eye"></i> Деталі
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+
+                                <div style="text-align: center; margin-top: 20px;">
+                                    <a href="orders.php" class="user-action-btn user-action-secondary" style="display: inline-flex;">
+                                        <i class="bi bi-list-ul"></i> Переглянути всі замовлення
+                                    </a>
+                                </div>
+                            <?php else: ?>
+                                <div class="no-data-message" style="text-align: center; padding: 20px;">
+                                    <i class="bi bi-clipboard-x" style="font-size: 2rem; color: #888; margin-bottom: 10px; display: block;"></i>
+                                    <p>У вас ще немає замовлень.</p>
+                                    <a href="create-order.php" class="user-action-btn user-action-primary" style="display: inline-flex; margin-top: 10px;">
+                                        <i class="bi bi-plus-circle"></i> Створити замовлення
+                                    </a>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+    </main>
 
-        <!-- Основний контент -->
-        <div class="col-lg-9">
-            <!-- Навігація по вкладках -->
-            <ul class="nav nav-tabs mb-4" id="profileTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile" type="button" role="tab" aria-controls="profile" aria-selected="true">
-                        <i class="bi bi-person"></i> Особисті дані
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#security" type="button" role="tab" aria-controls="security" aria-selected="false">
-                        <i class="bi bi-shield-lock"></i> Безпека
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="notifications-tab" data-bs-toggle="tab" data-bs-target="#notifications" type="button" role="tab" aria-controls="notifications" aria-selected="false">
-                        <i class="bi bi-bell"></i> Сповіщення
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="additional-tab" data-bs-toggle="tab" data-bs-target="#additional" type="button" role="tab" aria-controls="additional" aria-selected="false">
-                        <i class="bi bi-card-list"></i> Додаткова інформація
-                    </button>
-                </li>
-            </ul>
-
-            <!-- Вміст вкладок -->
-            <div class="tab-content" id="profileTabsContent">
-                <!-- Вкладка з особистими даними -->
-                <div class="tab-pane fade show active" id="profile" role="tabpanel" aria-labelledby="profile-tab">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Особисті дані</h5>
-                        </div>
-                        <div class="card-body">
-                            <form id="formProfile">
-                                <div class="row">
-                                    <div class="col-md-4 mb-3">
-                                        <label for="first_name" class="form-label">Ім'я</label>
-                                        <input type="text" class="form-control" id="first_name" name="first_name" value="<?php echo htmlspecialchars($user['first_name'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-4 mb-3">
-                                        <label for="last_name" class="form-label">Прізвище</label>
-                                        <input type="text" class="form-control" id="last_name" name="last_name" value="<?php echo htmlspecialchars($user['last_name'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-4 mb-3">
-                                        <label for="middle_name" class="form-label">По батькові</label>
-                                        <input type="text" class="form-control" id="middle_name" name="middle_name" value="<?php echo htmlspecialchars($user['middle_name'] ?? ''); ?>">
-                                    </div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="username" class="form-label">Ім'я користувача</label>
-                                    <input type="text" class="form-control" id="username" value="<?php echo htmlspecialchars($user['username']); ?>" readonly>
-                                    <div class="form-text">Ім'я користувача не можна змінити</div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="profile_phone" class="form-label">Телефон</label>
-                                    <input type="tel" class="form-control" id="profile_phone" name="phone" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>">
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="address" class="form-label">Адреса</label>
-                                    <textarea class="form-control" id="address" name="address" rows="3"><?php echo htmlspecialchars($user['address'] ?? ''); ?></textarea>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="delivery_method" class="form-label">Бажаний спосіб доставки</label>
-                                    <select class="form-select" id="delivery_method" name="delivery_method">
-                                        <option value="">Виберіть спосіб доставки</option>
-                                        <option value="Самовивіз" <?php echo ($user['delivery_method'] ?? '') === 'Самовивіз' ? 'selected' : ''; ?>>Самовивіз</option>
-                                        <option value="Нова пошта" <?php echo ($user['delivery_method'] ?? '') === 'Нова пошта' ? 'selected' : ''; ?>>Нова пошта</option>
-                                        <option value="Укрпошта" <?php echo ($user['delivery_method'] ?? '') === 'Укрпошта' ? 'selected' : ''; ?>>Укрпошта</option>
-                                        <option value="Кур'єр" <?php echo ($user['delivery_method'] ?? '') === 'Кур\'єр' ? 'selected' : ''; ?>>Кур'єр</option>
-                                    </select>
-                                </div>
-
-                                <button type="submit" class="btn btn-primary" data-original-text="Зберегти зміни">Зберегти зміни</button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Форма для завантаження аватара -->
-                    <div class="card mt-4">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Фото профілю</h5>
-                        </div>
-                        <div class="card-body">
-                            <form id="formAvatar" enctype="multipart/form-data">
-                                <div class="mb-3">
-                                    <label for="profile_pic" class="form-label">Завантажити нове фото</label>
-                                    <input type="file" class="form-control" id="profile_pic" name="profile_pic" accept="image/*">
-                                    <div class="form-text">Підтримувані формати: JPEG, PNG, GIF, WebP. Максимальний розмір: 5 МБ</div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <img id="avatarPreview" class="img-thumbnail d-none" alt="Превью" style="max-width: 200px; max-height: 200px;">
-                                </div>
-
-                                <button type="submit" class="btn btn-primary" data-original-text="Завантажити фото">Завантажити фото</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Вкладка з безпекою -->
-                <div class="tab-pane fade" id="security" role="tabpanel" aria-labelledby="security-tab">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Зміна пароля</h5>
-                        </div>
-                        <div class="card-body">
-                            <form id="formPassword">
-                                <div class="mb-3">
-                                    <label for="current_password" class="form-label">Поточний пароль</label>
-                                    <input type="password" class="form-control" id="current_password" name="current_password" required>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="new_password" class="form-label">Новий пароль</label>
-                                    <input type="password" class="form-control" id="new_password" name="new_password" required>
-                                    <div class="form-text">Пароль повинен містити не менше 8 символів</div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="confirm_password" class="form-label">Підтвердження нового пароля</label>
-                                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
-                                </div>
-
-                                <button type="submit" class="btn btn-primary" data-original-text="Змінити пароль">Змінити пароль</button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div class="card mt-4">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Зміна електронної пошти</h5>
-                        </div>
-                        <div class="card-body">
-                            <form id="formEmail">
-                                <div class="mb-3">
-                                    <label for="current_email" class="form-label">Поточна електронна пошта</label>
-                                    <input type="email" class="form-control" id="current_email" value="<?php echo htmlspecialchars($user['email']); ?>" readonly>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="new_email" class="form-label">Нова електронна пошта</label>
-                                    <input type="email" class="form-control" id="new_email" name="new_email" required>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="password" class="form-label">Пароль для підтвердження</label>
-                                    <input type="password" class="form-control" id="password" name="password" required>
-                                </div>
-
-                                <button type="submit" class="btn btn-primary" data-original-text="Змінити електронну пошту">Змінити електронну пошту</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Решта вкладок -->
-                <!-- Вкладка з налаштуваннями сповіщень -->
-                <div class="tab-pane fade" id="notifications" role="tabpanel" aria-labelledby="notifications-tab">
-                    <!-- Вміст вкладки з налаштуваннями сповіщень -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Налаштування сповіщень</h5>
-                        </div>
-                        <div class="card-body">
-                            <form id="formSettings">
-                                <!-- Вміст форми налаштувань сповіщень -->
-                            </form>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Вкладка з додатковою інформацією -->
-                <div class="tab-pane fade" id="additional" role="tabpanel" aria-labelledby="additional-tab">
-                    <!-- Вміст вкладки з додатковою інформацією -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Додаткова інформація</h5>
-                        </div>
-                        <div class="card-body">
-                            <form id="formAdditionalFields">
-                                <!-- Вміст форми з додатковою інформацією -->
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- Затемнення фону при відкритті мобільного меню -->
+    <div class="overlay" id="overlay"></div>
 </div>
 
-<!-- Футер -->
-<footer class="bg-dark text-white py-4 mt-5">
-    <div class="container">
-        <div class="row">
-            <div class="col-md-4">
-                <h5>Lagodi Service</h5>
-                <p>Сервісний центр з ремонту та обслуговування техніки</p>
-            </div>
-            <div class="col-md-4">
-                <h5>Контакти</h5>
-                <ul class="list-unstyled">
-                    <li><i class="bi bi-telephone"></i> +380 123 456 789</li>
-                    <li><i class="bi bi-envelope"></i> info@lagodi.com</li>
-                    <li><i class="bi bi-geo-alt"></i> м. Київ, вул. Прикладна, 123</li>
-                </ul>
-            </div>
-            <div class="col-md-4">
-                <h5>Посилання</h5>
-                <ul class="list-unstyled">
-                    <li><a href="/dah/" class="text-white">Головна</a></li>
-                    <li><a href="/dah/services.php" class="text-white">Послуги</a></li>
-                    <li><a href="/dah/contacts.php" class="text-white">Контакти</a></li>
-                </ul>
-            </div>
-        </div>
-        <hr>
-        <div class="text-center">
-            <p>&copy; <?php echo date('Y'); ?> Lagodi Service. Всі права захищені.</p>
-        </div>
-    </div>
-</footer>
-
-<!-- Контейнер для сповіщень -->
-<div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050;"></div>
-
-<!-- Модальне вікно для підтвердження виходу -->
-<div class="modal fade" id="logoutConfirmModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Підтвердження виходу</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p>Ви дійсно бажаєте вийти з системи?</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
-                <a href="/logout.php" class="btn btn-danger">Вийти</a>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- JavaScript файли -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
-<script src="/dah/assets/js/profile.js"></script>
-<script src="../jawa/dahj/notifications.js"></script>
 <script>
-    // Додаткові скрипти для сторінки профілю
     document.addEventListener('DOMContentLoaded', function() {
-        // Обробник для кнопки виходу
-        document.getElementById('logoutButton').addEventListener('click', function(e) {
-            e.preventDefault();
-            const logoutModal = new bootstrap.Modal(document.getElementById('logoutConfirmModal'));
-            logoutModal.show();
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('mainContent');
+        const mainWrapper = document.getElementById('mainWrapper');
+        const menuToggle = document.getElementById('menuToggle');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const overlay = document.getElementById('overlay');
+        const themeSwitchBtn = document.getElementById('themeSwitchBtn');
+
+        // Перевіряємо, чи є збережений стан сайдбара
+        const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+
+        // Функція для скривання/відображення сайдбару
+        function toggleSidebar(collapse) {
+            if (mainWrapper) {
+                if (collapse) {
+                    mainWrapper.classList.add('sidebar-collapsed');
+                    localStorage.setItem('sidebarCollapsed', 'true');
+                    if (sidebarToggle) sidebarToggle.innerHTML = '<i class="bi bi-arrow-right"></i>';
+                } else {
+                    mainWrapper.classList.remove('sidebar-collapsed');
+                    localStorage.setItem('sidebarCollapsed', 'false');
+                    if (sidebarToggle) sidebarToggle.innerHTML = '<i class="bi bi-arrow-left"></i>';
+                }
+            }
+        }
+
+        // Встановлюємо початковий стан сайдбару
+        toggleSidebar(sidebarCollapsed);
+
+        // Обробник для кнопки згортання сайдбару
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', function() {
+                const isCollapsed = mainWrapper && mainWrapper.classList.contains('sidebar-collapsed');
+                toggleSidebar(!isCollapsed);
+            });
+        }
+
+        // На мобільних пристроях сайдбар виїжджає
+        if (menuToggle && sidebar && overlay) {
+            menuToggle.addEventListener('click', function() {
+                sidebar.classList.toggle('mobile-active');
+                overlay.classList.toggle('active');
+                document.body.classList.toggle('no-scroll');
+            });
+
+            // Клік по затемненню закриває меню
+            overlay.addEventListener('click', function() {
+                sidebar.classList.remove('mobile-active');
+                overlay.classList.remove('active');
+                document.body.classList.remove('no-scroll');
+            });
+        }
+
+        // Випадаюче меню користувача
+        const userDropdownBtn = document.querySelector('.user-dropdown-btn');
+        const userDropdownMenu = document.querySelector('.user-dropdown-menu');
+
+        if (userDropdownBtn && userDropdownMenu) {
+            userDropdownBtn.addEventListener('click', function(event) {
+                event.stopPropagation();
+                userDropdownMenu.classList.toggle('show');
+            });
+
+            // Клік поза меню закриває їх
+            document.addEventListener('click', function(event) {
+                if (userDropdownMenu.classList.contains('show') &&
+                    !userDropdownBtn.contains(event.target) &&
+                    !userDropdownMenu.contains(event.target)) {
+                    userDropdownMenu.classList.remove('show');
+                }
+            });
+        }
+
+        // Функція для застосування теми до всіх елементів сайту
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+
+            // Встановлюємо куки, щоб тема зберігалась після перезавантаження
+            let date = new Date();
+            date.setTime(date.getTime() + (365 * 24 * 60 * 60 * 1000)); // 1 рік
+            let expires = "expires=" + date.toUTCString();
+            document.cookie = "theme=" + theme + ";" + expires + ";path=/";
+
+            // Оновлюємо вигляд кнопки перемикання теми
+            const themeSwitchBtn = document.getElementById('themeSwitchBtn');
+            if (themeSwitchBtn) {
+                const icon = themeSwitchBtn.querySelector('i');
+                if (icon) {
+                    icon.className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon';
+                }
+            }
+
+            // Застосовуємо відповідні стилі до сайдбару
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.setAttribute('data-theme', theme);
+            }
+
+            // Застосовуємо стилі до компонента користувача
+            const userProfileWidget = document.querySelector('.user-profile-widget');
+            if (userProfileWidget) {
+                if (theme === 'light') {
+                    userProfileWidget.style.backgroundColor = '#e9ecef';
+                } else {
+                    userProfileWidget.style.backgroundColor = '#232323';
+                }
+            }
+
+            // Оновлюємо колір імені користувача
+            const userName = document.querySelector('.user-profile-widget .user-name');
+            if (userName) {
+                userName.style.color = theme === 'light' ? '#212529' : 'white';
+            }
+        }
+
+        // Функція для перемикання теми з плавним переходом
+        function toggleTheme() {
+            // Отримуємо поточну тему
+            const htmlElement = document.documentElement;
+            const currentTheme = htmlElement.getAttribute('data-theme') || 'dark';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+            // Застосовуємо нову тему через нашу функцію
+            applyTheme(newTheme);
+
+            // Додаємо клас для плавного переходу
+            document.body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
+
+            // Зберігаємо поточний скрол
+            const scrollPosition = window.pageYOffset;
+
+            // Невелика затримка для анімації
+            setTimeout(() => {
+                // Після переходу - видаляємо стильове правило переходу
+                document.body.style.transition = '';
+
+                // Відновлюємо позицію скролу
+                window.scrollTo(0, scrollPosition);
+            }, 300);
+        }
+
+        // Додаємо обробники подій для перемикання теми
+        if (themeSwitchBtn) {
+            themeSwitchBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                toggleTheme();
+            });
+        }
+
+        // Зміна розміру екрану - для адаптивного дизайну
+        window.addEventListener('resize', function() {
+            if (window.innerWidth >= 992 && sidebar) {
+                if (sidebar.classList.contains('mobile-active')) {
+                    sidebar.classList.remove('mobile-active');
+                    overlay.classList.remove('active');
+                    document.body.classList.remove('no-scroll');
+                }
+            }
         });
 
-        document.getElementById('sidebarLogoutButton').addEventListener('click', function(e) {
-            e.preventDefault();
-            const logoutModal = new bootstrap.Modal(document.getElementById('logoutConfirmModal'));
-            logoutModal.show();
-        });
+        // Автоматичне закриття сповіщень
+        const alerts = document.querySelectorAll('.alert');
+        if (alerts.length > 0) {
+            setTimeout(function() {
+                alerts.forEach(alert => {
+                    alert.style.opacity = '0';
+                    setTimeout(() => {
+                        alert.style.display = 'none';
+                    }, 300);
+                });
+            }, 5000);
+        }
+
+        // Застосовуємо поточну тему при завантаженні сторінки
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        if (currentTheme) {
+            applyTheme(currentTheme);
+        }
     });
 </script>
 </body>

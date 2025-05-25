@@ -1,0 +1,306 @@
+/* Основні стилі для модального вікна */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    animation: modalFadeIn 0.3s ease;
+}
+
+/* Анімація появи модального вікна */
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Контент модального вікна */
+.modal-content {
+    position: relative;
+    background-color: var(--bg-primary, #ffffff);
+    margin: 5% auto;
+    padding: 20px;
+    width: 90%;
+    max-width: 500px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    animation: modalSlideIn 0.3s ease;
+}
+
+/* Анімація появи контенту */
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Кнопка закриття */
+.modal .close {
+    position: absolute;
+    right: 15px;
+    top: 10px;
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--text-secondary, #6c757d);
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+.modal .close:hover {
+    color: var(--text-primary, #212529);
+}
+
+/* Заголовок модального вікна */
+.modal-header {
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid var(--border-color, #dee2e6);
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: var(--text-primary, #212529);
+    font-size: 1.25rem;
+}
+
+/* Тіло модального вікна */
+.modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+/* Стилізація скролбара */
+.modal-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+    background: var(--bg-secondary, #f8f9fa);
+    border-radius: 3px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+    background: var(--text-secondary, #6c757d);
+    border-radius: 3px;
+}
+
+/* Підвал модального вікна */
+.modal-footer {
+    padding-top: 15px;
+    margin-top: 15px;
+    border-top: 1px solid var(--border-color, #dee2e6);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* Кнопки в модальному вікні */
+.modal-footer button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.modal-footer .btn-primary {
+    background-color: var(--primary-color, #007bff);
+    color: white;
+}
+
+.modal-footer .btn-secondary {
+    background-color: var(--secondary-color, #6c757d);
+    color: white;
+}
+
+.modal-footer button:hover {
+    opacity: 0.9;
+}
+
+/* Форми в модальному вікні */
+.modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.modal-form .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.modal-form label {
+    color: var(--text-primary, #212529);
+    font-weight: 500;
+}
+
+.modal-form input,
+.modal-form textarea,
+.modal-form select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color, #dee2e6);
+    border-radius: 4px;
+    background-color: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #212529);
+}
+
+/* Завантаження файлів */
+.file-upload-area {
+    border: 2px dashed var(--border-color, #dee2e6);
+    padding: 20px;
+    text-align: center;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.3s ease;
+}
+
+.file-upload-area:hover {
+    border-color: var(--primary-color, #007bff);
+}
+
+.file-upload-area i {
+    font-size: 24px;
+    color: var(--text-secondary, #6c757d);
+    margin-bottom: 10px;
+}
+
+/* Прев'ю зображення */
+.image-preview {
+    max-width: 100%;
+    height: auto;
+    margin-top: 15px;
+    border-radius: 4px;
+}
+
+/* Індикатор завантаження */
+.loading-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.loading-indicator i {
+    color: var(--primary-color, #007bff);
+    font-size: 24px;
+}
+
+/* Адаптивний дизайн */
+@media (max-width: 768px) {
+.modal-content {
+        width: 95%;
+        margin: 10% auto;
+    }
+
+.modal-body {
+        max-height: 60vh;
+    }
+}
+
+/* Модальне вікно для підтвердження дій */
+.confirm-modal .modal-content {
+    max-width: 400px;
+}
+
+.confirm-modal .modal-body {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.confirm-modal .modal-footer {
+    justify-content: center;
+}
+
+/* Анімація для іконки завантаження */
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+}
+    100% {
+        transform: rotate(360deg);
+}
+}
+
+.loading-indicator i {
+    animation: spin 1s linear infinite;
+}
+
+/* Стилі для різних типів модальних вікон */
+.modal.success .modal-header {
+    color: var(--success-color, #28a745);
+}
+
+.modal.warning .modal-header {
+    color: var(--warning-color, #ffc107);
+}
+
+.modal.error .modal-header {
+    color: var(--danger-color, #dc3545);
+}
+
+/* Стилі для модального вікна в темній темі */
+.dark-theme .modal-content {
+    background-color: var(--bg-secondary, #343a40);
+    color: var(--text-primary, #f8f9fa);
+}
+
+.dark-theme .modal input,
+.dark-theme .modal textarea,
+.dark-theme .modal select {
+    background-color: var(--bg-primary, #212529);
+    color: var(--text-primary, #f8f9fa);
+    border-color: var(--border-color, #495057);
+}
+
+/* Стилі для повідомлень про помилки у формах */
+.modal .error-message {
+    color: var(--danger-color, #dc3545);
+    font-size: 0.875rem;
+    margin-top: 5px;
+}
+
+/* Стилі для підказок */
+.modal .tooltip {
+    position: relative;
+    display: inline-block;
+    margin-left: 5px;
+}
+
+.modal .tooltip i {
+    color: var(--info-color, #17a2b8);
+    cursor: help;
+}
+
+.modal .tooltip-text {
+    visibility: hidden;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--dark-color, #343a40);
+    color: white;
+    text-align: center;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.modal .tooltip:hover .tooltip-text {
+    visibility: visible;
+}

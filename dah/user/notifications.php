@@ -262,7 +262,7 @@ try {
     $recentCommentsQuery = "SELECT c.id, c.content, c.created_at, c.is_read, c.admin_id, c.user_id,
                                    o.id as order_id, o.service, o.status,
                                    CASE WHEN o.status = 'Завершено' THEN 1 ELSE 0 END as is_completed,
-                                   u.username, u.first_name, u.last_name, u.role
+                                   u.username, u.first_name, u.last_name, u.role, u.profile_pic
                            FROM comments c
                            JOIN orders o ON c.order_id = o.id
                            LEFT JOIN users u ON c.user_id = u.id
@@ -303,7 +303,7 @@ try {
         $commentsQuery = "SELECT c.id, c.content, c.created_at, c.is_read, c.admin_id, c.user_id,
                                 o.id as order_id, o.service, o.status,
                                 CASE WHEN o.status = 'Завершено' THEN 1 ELSE 0 END as is_completed,
-                                u.username, u.first_name, u.last_name, u.role
+                                u.username, u.first_name, u.last_name, u.role, u.profile_pic
                           FROM comments c
                           JOIN orders o ON c.order_id = o.id
                           LEFT JOIN users u ON c.user_id = u.id
@@ -418,6 +418,46 @@ function getAuthorName($comment) {
     }
 
     return 'Адміністратор';
+}
+
+// Функція для отримання ролі автора коментаря
+function getAuthorRole($comment) {
+    if (isset($comment['role']) && $comment['role'] === 'junior_admin') {
+        return 'Молодший Адмін';
+    }
+
+    if (isset($comment['admin_id']) && !empty($comment['admin_id']) ||
+        (isset($comment['role']) && $comment['role'] === 'admin')) {
+        return 'Адмін';
+    }
+
+    return '';
+}
+
+// Функція для отримання аватара автора
+function getAuthorAvatar($comment) {
+    // Спочатку перевіряємо, чи є у користувача profile_pic
+    if (isset($comment['profile_pic']) && !empty($comment['profile_pic'])) {
+        return '<img src="' . safeEcho($comment['profile_pic']) . '" alt="Фото профілю" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">';
+    }
+
+    // Якщо немає фото, показуємо першу літеру імені користувача
+    $initial = strtoupper(substr($comment['username'] ?? 'A', 0, 1));
+    return $initial;
+}
+
+// Функція для отримання класу автора залежно від ролі
+function getAuthorClass($comment) {
+    if (isset($comment['role']) && $comment['role'] === 'junior_admin') {
+        return 'junior-admin-author';
+    }
+
+    if (isset($comment['admin_id']) && !empty($comment['admin_id']) ||
+        (isset($comment['role']) && $comment['role'] === 'admin')) {
+        return 'admin-author';
+    }
+
+    return '';
 }
 ?>
 
@@ -624,6 +664,53 @@ function getAuthorName($comment) {
             background-color: #1d9bf0;
             color: white;
         }
+
+        /* Стилі для відображення автора та його аватара */
+        .comment-author .author-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            overflow: hidden;
+            background-color: #7a3bdf;
+            color: white;
+        }
+
+        .comment-author.admin-author .author-avatar {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .comment-author.junior-admin-author .author-avatar {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .author-badge {
+            background-color: #e74c3c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .junior-admin-author .author-badge {
+            background-color: #3498db;
+        }
+
+        /* Додаткові стилі для відображення фото профілю в сайдбарі */
+        .user-profile-widget .user-avatar img,
+        .user-dropdown-btn .user-avatar-small img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }
     </style>
 </head>
 <body>
@@ -809,15 +896,17 @@ function getAuthorName($comment) {
                                     </div>
                                     <div class="comment-body">
                                         <div class="comment-number"><?php echo isset($comment['id']) ? (int)$comment['id'] : ''; ?></div>
-                                        <div class="comment-author">
+                                        <div class="comment-author <?php echo getAuthorClass($comment); ?>">
                                             <div class="author-avatar">
-                                                <?php echo strtoupper(substr($comment['username'] ?? 'A', 0, 1)); ?>
+                                                <?php echo getAuthorAvatar($comment); ?>
                                             </div>
                                             <div>
-                                        <span class="author-name">
-                                            <?php echo getAuthorName($comment); ?>
-                                        </span>
-                                                <span class="author-badge">Адмін</span>
+                                                <span class="author-name">
+                                                    <?php echo getAuthorName($comment); ?>
+                                                </span>
+                                                <?php $role = getAuthorRole($comment); if (!empty($role)): ?>
+                                                    <span class="author-badge"><?php echo $role; ?></span>
+                                                <?php endif; ?>
                                             </div>
                                         </div>
                                         <div class="comment-text">
@@ -868,15 +957,17 @@ function getAuthorName($comment) {
                                     </div>
                                     <div class="comment-body">
                                         <div class="comment-number"><?php echo isset($comment['id']) ? (int)$comment['id'] : ''; ?></div>
-                                        <div class="comment-author">
+                                        <div class="comment-author <?php echo getAuthorClass($comment); ?>">
                                             <div class="author-avatar">
-                                                <?php echo strtoupper(substr($comment['username'] ?? 'A', 0, 1)); ?>
+                                                <?php echo getAuthorAvatar($comment); ?>
                                             </div>
                                             <div>
-                                        <span class="author-name">
-                                            <?php echo getAuthorName($comment); ?>
-                                        </span>
-                                                <span class="author-badge">Адмін</span>
+                                                <span class="author-name">
+                                                    <?php echo getAuthorName($comment); ?>
+                                                </span>
+                                                <?php $role = getAuthorRole($comment); if (!empty($role)): ?>
+                                                    <span class="author-badge"><?php echo $role; ?></span>
+                                                <?php endif; ?>
                                             </div>
                                         </div>
                                         <div class="comment-text">

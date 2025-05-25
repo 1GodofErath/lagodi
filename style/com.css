@@ -1,0 +1,88 @@
+/* Time Display */
+.current-time-panel {
+    background-color: var(--card-bg);
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+
+.current-time {
+    font-family: 'Courier New', monospace;
+    font-size: 1.1em;
+    color: var(--primary-color);
+}
+
+/* User Info Panel */
+.user-info-panel {
+    background-color: var(--card-bg);
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.user-status {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.user-status.online {
+    background-color: var(--success-color);
+}
+
+.user-status.offline {
+    background-color: var(--secondary-color);
+}
+
+.user-status.blocked {
+    background-color: var(--danger-color);
+}
+
+/* Navbar Customization */
+.navbar {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.5rem 1rem;
+}
+
+.navbar .dropdown-menu {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+.navbar .dropdown-item {
+    color: var(--body-color);
+}
+
+.navbar .dropdown-item:hover {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.navbar .dropdown-divider {
+    border-color: var(--border-color);
+}
+
+/* Time Display in Navbar */
+.navbar .current-time {
+    font-size: 0.9em;
+    min-width: 180px;
+}
+
+/* User Dropdown */
+.navbar .user-dropdown-toggle {
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.navbar .user-dropdown-toggle img {
+    border: 2px solid var(--border-color);
+    transition: border-color 0.3s;
+}
+
+.navbar .user-dropdown-toggle:hover img {
+    border-color: var(--primary-color);
+}

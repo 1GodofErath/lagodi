@@ -1,0 +1,406 @@
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Poppins", sans-serif;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: url('foto/rrr.jpg') no-repeat center center fixed;
+    background-size: cover;
+    padding: 15px;
+}
+
+/* Wrapper Styles */
+.wrapper {
+    width: min(420px, 100%);
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(2px);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    color: white;
+    border-radius: 2px;
+    padding: 20px;
+}
+
+/* Title */
+.title {
+    font-size: 28px;
+    margin-bottom: 25px;
+    text-align: center;
+}
+
+/* Form Elements */
+.form {
+    width: 100%;
+}
+
+.input-box {
+    margin-bottom: 20px;
+}
+
+.input-box label {
+    display: block;
+    text-align: left;
+    margin-bottom: 8px;
+    color: white;
+    font-size: 16px;
+}
+
+.input-box input {
+    width: 100%;
+    height: 45px;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    background: white;
+    color: #000;
+    font-size: 16px;
+}
+
+/* Remember Me and Forgot Password */
+.remember-forgot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.remember-forgot label {
+    display: flex;
+    align-items: center;
+    color: white;
+    font-size: 14px;
+}
+
+.remember-forgot input[type="checkbox"] {
+    margin-right: 5px;
+    width: 16px;
+    height: 16px;
+}
+
+.sell {
+    color: #183b93;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+/* Buttons */
+.btn {
+    width: 100%;
+    height: 45px;
+    background: white;
+    border: none;
+    border-radius: 5px;
+    color: #000;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: 20px;
+}
+
+.btn:hover {
+    background: #f0f0f0;
+}
+
+/* Google Login Button */
+.social-login {
+    margin-top: 20px;
+}
+
+.btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 45px;
+    background: white;
+    border-radius: 5px;
+    color: #000;
+    text-decoration: none;
+    font-size: 16px;
+    font-weight: 500;
+    position: relative;
+    padding: 0 15px;
+}
+
+.google-logo {
+    width: 20px;
+    height: 20px;
+    position: absolute;
+    left: 15px;
+}
+
+/* Error Message */
+.error {
+    color: #ff4444;
+    margin: 10px 0;
+    text-align: center;
+    font-size: 14px;
+}
+
+/* Register Link */
+.register-link {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.register-link p {
+    color: white;
+    font-size: 14px;
+}
+
+.register-link a {
+    color: #183b93;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+/* Mobile Responsive Styles */
+@media screen and (max-width: 480px) {
+    .wrapper {
+        padding: 15px;
+    }
+
+    .title {
+        font-size: 24px;
+        margin-bottom: 20px;
+    }
+
+    .input-box {
+        margin-bottom: 15px;
+    }
+
+    .input-box input {
+        height: 40px;
+    }
+
+    .remember-forgot {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .btn,
+    .btn-google {
+        height: 40px;
+        font-size: 15px;
+    }
+
+    .google-logo {
+        width: 18px;
+        height: 18px;
+        left: 10px;
+    }
+}
+
+/* Tablet Responsive Styles */
+@media screen and (min-width: 481px) and (max-width: 768px) {
+    .wrapper {
+        width: 90%;
+        max-width: 500px;
+    }
+}
+
+/* Touch Device Optimizations */
+@media (hover: none) {
+    .btn,
+    .btn-google,
+    .input-box input,
+    .remember-forgot input[type="checkbox"] {
+        cursor: default;
+    }
+
+    .input-box input,
+    .btn,
+    .btn-google {
+        -webkit-tap-highlight-color: transparent;
+    }
+}
+
+/* Accessibility Improvements */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* High Contrast Mode */
+@media (forced-colors: active) {
+    .wrapper {
+        border: 2px solid CanvasText;
+    }
+
+    .btn,
+    .btn-google,
+    .input-box input {
+        border: 1px solid CanvasText;
+    }
+}
+/* ... (попередні стилі залишаються без змін) ... */
+
+/* Remember Me and Forgot Password */
+.remember-forgot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 10px;
+}
+
+@media screen and (max-width: 380px) {
+    .remember-forgot {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .remember-forgot label,
+    .remember-forgot .sell {
+        width: 100%;
+    }
+
+    .remember-forgot .sell {
+        text-align: left;
+    }
+}
+
+.remember-forgot label {
+    display: flex;
+    align-items: center;
+    color: white;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.remember-forgot input[type="checkbox"] {
+    margin-right: 5px;
+    width: 16px;
+    height: 16px;
+}
+
+.sell {
+    color: #183b93;
+    text-decoration: none;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+/* ... (інші стилі залишаються без змін) ... */
+
+/* Mobile Responsive Styles */
+@media screen and (max-width: 480px) {
+    .wrapper {
+        padding: 15px;
+    }
+
+    .title {
+        font-size: 24px;
+        margin-bottom: 20px;
+    }
+
+    .input-box {
+        margin-bottom: 15px;
+    }
+
+    .input-box input {
+        height: 40px;
+    }
+
+    /* Видалимо це правило, оскільки воно тепер обробляється вище
+    .remember-forgot {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+    */
+
+    .btn,
+    .btn-google {
+        height: 40px;
+        font-size: 15px;
+    }
+}
+.remember-forgot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    width: 100%;
+    gap: 15px;
+}
+
+/* Remember Me Checkbox Container */
+.remember-checkbox {
+    display: flex;
+    align-items: center;
+    color: white;
+    font-size: 14px;
+    white-space: nowrap;
+    order: 1; /* Ensures it stays first */
+}
+
+/* Checkbox Input */
+.remember-checkbox input[type="checkbox"] {
+    margin-right: 5px;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+/* Forgot Password Link */
+.forgot-password {
+    color: #183b93;
+    text-decoration: none;
+    font-size: 14px;
+    white-space: nowrap;
+    order: 2; /* Ensures it stays second */
+    margin-left: auto; /* Pushes it to the right */
+}
+
+/* Mobile Styles */
+@media screen and (max-width: 380px) {
+    .remember-forgot {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .remember-checkbox,
+    .forgot-password {
+        width: 100%;
+        margin: 0;
+    }
+}
+
+/* Tablet and Desktop Styles */
+@media screen and (min-width: 381px) {
+    .remember-forgot {
+        flex-wrap: nowrap;
+        flex-direction: row;
+    }
+
+    .remember-checkbox {
+        flex: 0 1 auto;
+    }
+
+    .forgot-password {
+        flex: 0 1 auto;
+        text-align: right;
+    }
+}
+
+/* Large Screen Styles */
+@media screen and (min-width: 1200px) {
+    .remember-forgot {
+        justify-content: space-between;
+        max-width: 100%;
+    }
+}

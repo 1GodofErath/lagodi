@@ -1,115 +1,133 @@
 <?php
+// mark_comment_read.php - API для позначення коментарів як прочитаних (працюючий метод із notifications.php)
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
-session_start();
 
-// Подключение необходимых файлов
-require_once '../../dah/confi/database.php';
-require_once '../../dah/include/auth.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/confi/database.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/include/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/include/auth.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/dah/include/session.php';
 
-// Проверка авторизации
-if (!isLoggedIn()) {
-    header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    exit;
+// Створюємо директорію для логів, якщо вона не існує
+$log_dir = $_SERVER['DOCUMENT_ROOT'] . '/dah/logs';
+if (!is_dir($log_dir)) {
+    mkdir($log_dir, 0755, true);
 }
+$debug_log_file = $_SERVER['DOCUMENT_ROOT'] . '/dah/logs/debug.log';
 
-// Логирование для отладки
-function logDebug($message) {
-    $logFile = __DIR__ . '/notification_debug.log';
-    $timestamp = date('Y-m-d H:i:s');
-    file_put_contents($logFile, "{$timestamp} - {$message}\n", FILE_APPEND);
-}
+// Запис початку запиту в лог
+file_put_contents($debug_log_file, "2025-05-23 13:32:38 - SYNCHRONIZED API Request started\n", FILE_APPEND);
 
-logDebug("API called by user: " . $_SESSION['user_id']);
-
-// Получение текущего пользователя
+// Отримуємо поточного користувача
 $user = getCurrentUser();
-$userId = $user['id'];
+$user_id = $user['id'];
 
-// Сохраняем запрос для отладки
-logDebug("User ID: {$userId}, Request: " . file_get_contents('php://input'));
+// Запис інформації про користувача
+file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Current user: 1GodofErath (ID: $user_id)\n", FILE_APPEND);
 
-// Проверка методов запроса и наличия необходимых данных
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Получение данных из POST-запроса
+try {
+    // Підключаємось до бази
+    $database = new Database();
+    $db = $database->getConnection();
+
+    // Обробка POST запиту
     $data = json_decode(file_get_contents('php://input'), true);
 
-    // Если это запрос на отметку одного уведомления как прочитанного
-    if (isset($data['notification_id'])) {
-        $notificationId = intval($data['notification_id']);
-        logDebug("Marking notification ID {$notificationId} as read");
+    // Отримуємо параметри з POST або JSON даних
+    $mark_all = isset($_POST['mark_all']) ? $_POST['mark_all'] : (isset($data['mark_all']) ? $data['mark_all'] : false);
+    $comment_id = isset($_POST['comment_id']) ? $_POST['comment_id'] : (isset($data['comment_id']) ? $data['comment_id'] : null);
+    $user_id = isset($_POST['user_id']) ? $_POST['user_id'] : (isset($data['user_id']) ? $data['user_id'] : $user_id);
 
-        // Подключение к БД
-        $database = new Database();
-        $db = $database->getConnection();
+    // Логуємо отримані параметри
+    file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Parameters: mark_all=" . ($mark_all ? 'true' : 'false') . ", comment_id=" . ($comment_id ? $comment_id : 'null') . ", user_id=$user_id\n", FILE_APPEND);
 
-        // Проверка существования уведомления
-        $checkQuery = "SELECT * FROM notifications WHERE id = :notification_id AND user_id = :user_id";
-        $checkStmt = $db->prepare($checkQuery);
-        $checkStmt->bindParam(':notification_id', $notificationId, PDO::PARAM_INT);
-        $checkStmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-        $checkStmt->execute();
-
-        $notification = $checkStmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$notification) {
-            logDebug("Notification ID {$notificationId} not found for user {$userId}");
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Notification not found']);
-            exit;
-        }
-
-        // Обновление статуса уведомления на "прочитано"
-        $query = "UPDATE notifications SET is_read = 1, updated_at = NOW() WHERE id = :notification_id AND user_id = :user_id";
+    if ($comment_id) {
+        // Позначаємо один коментар як прочитаний
+        $query = "UPDATE comments SET is_read = 1 WHERE id = :comment_id";
         $stmt = $db->prepare($query);
-        $stmt->bindParam(':notification_id', $notificationId, PDO::PARAM_INT);
-        $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+        $stmt->bindParam(':comment_id', $comment_id, PDO::PARAM_INT);
+        $result = $stmt->execute();
+        $affected = $stmt->rowCount();
 
-        $success = $stmt->execute();
-        $rowsAffected = $stmt->rowCount();
+        file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Mark single comment result: " . ($result ? 'success' : 'failed') . ", affected: $affected\n", FILE_APPEND);
 
-        logDebug("Notification update result: success={$success}, rows={$rowsAffected}");
-
+        // Повертаємо результат
         header('Content-Type: application/json');
         echo json_encode([
-            'success' => $success,
-            'message' => $success ? 'Notification marked as read' : 'Database error',
-            'rows' => $rowsAffected
+            'success' => $result,
+            'affected' => $affected,
+            'message' => $result ? 'Коментар позначено як прочитаний' : 'Помилка при оновленні коментаря',
+            'timestamp' => '2025-05-23 13:32:38'
         ]);
     }
-    // Если это запрос на отметку всех уведомлений как прочитанных
-    else if (isset($data['mark_all']) && $data['mark_all'] === true) {
-        logDebug("Marking all notifications as read for user {$userId}");
-        // Подключение к БД
-        $database = new Database();
-        $db = $database->getConnection();
+    elseif ($mark_all) {
+        // ВИКОРИСТОВУЄМО МЕТОД ЯКИЙ 100% ПРАЦЮЄ В notifications.php
 
-        // Обновление статуса всех уведомлений пользователя
-        $query = "UPDATE notifications SET is_read = 1, updated_at = NOW() WHERE user_id = :user_id AND is_read = 0";
-        $stmt = $db->prepare($query);
-        $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+        // Отримуємо всі замовлення користувача
+        $query_orders = "SELECT id FROM orders WHERE user_id = :user_id";
+        $stmt_orders = $db->prepare($query_orders);
+        $stmt_orders->bindParam(':user_id', $user_id, PDO::PARAM_INT);
+        $stmt_orders->execute();
+        $order_ids = $stmt_orders->fetchAll(PDO::FETCH_COLUMN);
 
-        $success = $stmt->execute();
-        $rowsAffected = $stmt->rowCount();
+        file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Found orders: " . json_encode($order_ids) . "\n", FILE_APPEND);
 
-        logDebug("Mark all result: success={$success}, rows={$rowsAffected}");
+        // Оновлюємо статус для всіх коментарів користувача
+        $success = true;
+        $affected_total = 0;
 
+        if (!empty($order_ids)) {
+            foreach ($order_ids as $order_id) {
+                $query = "UPDATE comments SET is_read = 1 WHERE order_id = :order_id AND is_read = 0";
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(':order_id', $order_id, PDO::PARAM_INT);
+                $result = $stmt->execute();
+
+                if ($result) {
+                    $affected_total += $stmt->rowCount();
+                    file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Updated comments for order $order_id: {$stmt->rowCount()}\n", FILE_APPEND);
+                } else {
+                    $success = false;
+                    file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Failed to update comments for order $order_id\n", FILE_APPEND);
+                }
+            }
+        }
+
+        file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Mark all comments result: " . ($success ? 'success' : 'failed') . ", affected total: $affected_total\n", FILE_APPEND);
+
+        // Повертаємо результат
         header('Content-Type: application/json');
         echo json_encode([
             'success' => $success,
-            'message' => $success ? 'All notifications marked as read' : 'Database error',
-            'rows' => $rowsAffected
+            'affected' => $affected_total,
+            'message' => $success ? "Всі коментарі позначені як прочитані ($affected_total)" : 'Помилка при оновленні коментарів',
+            'timestamp' => '2025-05-23 13:32:38'
         ]);
     }
     else {
-        logDebug("Invalid request format");
+        // Не вказано необхідні параметри
+        file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Missing required parameters\n", FILE_APPEND);
+
         header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Invalid request']);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Не вказано необхідні параметри (mark_all або comment_id)',
+            'timestamp' => '2025-05-23 13:32:38'
+        ]);
     }
-} else {
-    logDebug("Invalid request method: " . $_SERVER['REQUEST_METHOD']);
+} catch (Exception $e) {
+    // Логуємо помилку
+    file_put_contents($debug_log_file, "2025-05-23 13:32:38 - Error: " . $e->getMessage() . "\n", FILE_APPEND);
+
+    // Повертаємо помилку
     header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage(),
+        'timestamp' => '2025-05-23 13:32:38'
+    ]);
 }
+
+// Запис завершення запиту в лог
+file_put_contents($debug_log_file, "2025-05-23 13:32:38 - API request completed\n\n", FILE_APPEND);
 ?>

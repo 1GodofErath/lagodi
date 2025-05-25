@@ -1,0 +1,50 @@
+/* Додаткові стилі для форми реєстрації */
+.wrapper .input-box input:focus {
+    outline: none;
+    border: 2px solid #0d4ad8; /* Підсвічування при фокусі */
+}
+
+.wrapper .btn:hover {
+    background: #555555; /* Зміна кольору кнопки при наведенні */
+}
+
+.wrapper .register-link a {
+    color: #0d4ad8;
+    text-decoration: none;
+}
+
+.wrapper .register-link a:hover {
+    text-decoration: underline;
+}
+.btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%; /* По ширині батьківського контейнера */
+    padding: 12px;
+    background-color: #777777;
+    color: #ffffff;
+    border-radius: 8px; /* Такий самий бордер-радіус, як у .btn-primary */
+    font-size: 16px;
+    font-weight: bold;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.3s, box-shadow 0.3s;
+    position: relative;
+    box-sizing: border-box; /* Щоб ширина правильно рахувалася */
+}
+
+/* Логотип Google */
+.google-logo {
+    width: 20px;
+    height: 20px;
+    position: absolute;
+    left: 15px; /* Фіксуємо логотип ліворуч */
+}
+
+/* Ефекти при наведенні */
+.btn-google:hover {
+    background-color: #f1f1f1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    color: #6e6565 ;
+}

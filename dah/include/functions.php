@@ -282,18 +282,55 @@ function getServiceCategories() {
     return $stmt->fetchAll();
 }
 
-// Функція для отримання повідомлень користувача
+// Функція для отримання кількості непрочитаних коментарів (замість сповіщень)
+function getUnreadNotificationsCount($user_id) {
+    $database = new Database();
+    $db = $database->getConnection();
+
+    // Записуємо в лог для відлагодження
+    $log_dir = $_SERVER['DOCUMENT_ROOT'] . '/dah/logs';
+    if (!is_dir($log_dir)) {
+        mkdir($log_dir, 0755, true);
+    }
+    $log_file = $_SERVER['DOCUMENT_ROOT'] . '/dah/logs/functions.log';
+
+    try {
+        // Тепер перевіряємо коментарі замість сповіщень
+        $query = "SELECT COUNT(*) as count 
+                  FROM comments c
+                  JOIN orders o ON c.order_id = o.id
+                  WHERE o.user_id = :user_id AND c.is_read = 0";
+        $stmt = $db->prepare($query);
+
+        $stmt->bindParam(':user_id', $user_id);
+        $stmt->execute();
+
+        $result = $stmt->fetch();
+        $count = $result['count'] ?? 0;
+
+        // Логуємо для відлагодження
+        file_put_contents($log_file, date('Y-m-d H:i:s') . " - getUnreadNotificationsCount called for user $user_id, count: $count\n", FILE_APPEND);
+
+        return $count;
+    } catch (Exception $e) {
+        // Логуємо помилку
+        file_put_contents($log_file, date('Y-m-d H:i:s') . " - ERROR in getUnreadNotificationsCount: " . $e->getMessage() . "\n", FILE_APPEND);
+        return 0;
+    }
+}
+
+// Функція для отримання повідомлень користувача (тепер коментарів)
 function getUserNotifications($user_id, $limit = 10, $offset = 0, $only_unread = false) {
     $database = new Database();
     $db = $database->getConnection();
 
-    $whereClause = "WHERE user_id = :user_id";
+    $whereClause = "JOIN orders o ON c.order_id = o.id WHERE o.user_id = :user_id";
 
     if ($only_unread) {
-        $whereClause .= " AND is_read = 0";
+        $whereClause .= " AND c.is_read = 0";
     }
 
-    $query = "SELECT * FROM notifications $whereClause ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+    $query = "SELECT c.*, o.service FROM comments c $whereClause ORDER BY c.created_at DESC LIMIT :limit OFFSET :offset";
     $stmt = $db->prepare($query);
 
     $stmt->bindParam(':user_id', $user_id);
@@ -305,47 +342,55 @@ function getUserNotifications($user_id, $limit = 10, $offset = 0, $only_unread =
     return $stmt->fetchAll();
 }
 
-// Функція для отримання кількості непрочитаних повідомлень
-function getUnreadNotificationsCount($user_id) {
-    $database = new Database();
-    $db = $database->getConnection();
-
-    $query = "SELECT COUNT(*) as count FROM notifications WHERE user_id = :user_id AND is_read = 0";
-    $stmt = $db->prepare($query);
-
-    $stmt->bindParam(':user_id', $user_id);
-    $stmt->execute();
-
-    $result = $stmt->fetch();
-
-    return $result['count'] ?? 0;
-}
-
-// Функція для позначення повідомлення як прочитаного
+// Функція для позначення повідомлення як прочитаного (тепер коментаря)
 function markNotificationAsRead($notification_id, $user_id) {
     $database = new Database();
     $db = $database->getConnection();
 
-    $query = "UPDATE notifications SET is_read = 1 WHERE id = :notification_id AND user_id = :user_id";
-    $stmt = $db->prepare($query);
+    try {
+        // Перевіряємо, чи коментар належить до замовлення поточного користувача
+        $check_query = "SELECT c.id FROM comments c
+                        JOIN orders o ON c.order_id = o.id
+                        WHERE c.id = :comment_id AND o.user_id = :user_id";
+        $check_stmt = $db->prepare($check_query);
+        $check_stmt->bindParam(':comment_id', $notification_id);
+        $check_stmt->bindParam(':user_id', $user_id);
+        $check_stmt->execute();
 
-    $stmt->bindParam(':notification_id', $notification_id);
-    $stmt->bindParam(':user_id', $user_id);
+        if ($check_stmt->rowCount() === 0) {
+            return false;
+        }
 
-    return $stmt->execute();
+        // Оновлюємо статус прочитання коментаря
+        $query = "UPDATE comments SET is_read = 1 WHERE id = :comment_id";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':comment_id', $notification_id);
+
+        return $stmt->execute();
+    } catch (Exception $e) {
+        // Можливо тут варто додати лог помилки
+        return false;
+    }
 }
 
-// Функція для позначення всіх повідомлень як прочитаних
+// Функція для позначення всіх повідомлень як прочитаних (тепер коментарів)
 function markAllNotificationsAsRead($user_id) {
     $database = new Database();
     $db = $database->getConnection();
 
-    $query = "UPDATE notifications SET is_read = 1 WHERE user_id = :user_id AND is_read = 0";
-    $stmt = $db->prepare($query);
+    try {
+        $query = "UPDATE comments c
+                 JOIN orders o ON c.order_id = o.id
+                 SET c.is_read = 1
+                 WHERE o.user_id = :user_id AND c.is_read = 0";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(':user_id', $user_id);
 
-    $stmt->bindParam(':user_id', $user_id);
-
-    return $stmt->execute();
+        return $stmt->execute();
+    } catch (Exception $e) {
+        // Можливо тут варто додати лог помилки
+        return false;
+    }
 }
 
 // Функція для оновлення налаштувань профілю користувача
@@ -722,4 +767,3 @@ function updateOrder($order_id, $user_id, $data) {
 
     return ['success' => false, 'message' => 'Помилка при оновленні замовлення'];
 }
-?>

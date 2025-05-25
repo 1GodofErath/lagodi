@@ -424,8 +424,51 @@ function safeEcho($text, $default = '') {
     <script>
         // Блокуємо рендеринг сторінки до встановлення теми
         (function() {
-            const storedTheme = localStorage.getItem('theme') || '<?php echo $currentTheme; ?>';
-            document.documentElement.setAttribute('data-theme', storedTheme);
+            // Check localStorage first
+            let theme = localStorage.getItem('theme');
+
+            // If not in localStorage, check cookies
+            if (!theme) {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.startsWith('theme=')) {
+                        theme = cookie.substring(6);
+                        break;
+                    }
+                }
+            }
+
+            // If still no theme, use the system preference or default to light
+            if (!theme) {
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    theme = 'dark';
+                } else {
+                    theme = 'light';
+                }
+            }
+
+            // Apply theme to document
+            document.documentElement.setAttribute('data-theme', theme);
+
+            // Також застосовуємо тему до сайдбару при завантаженні
+            document.addEventListener('DOMContentLoaded', function() {
+                const sidebar = document.getElementById('sidebar');
+                if (sidebar) {
+                    sidebar.setAttribute('data-theme', theme);
+                }
+
+                // Встановлюємо відповідні стилі для компонентів користувача
+                const userProfileWidget = document.querySelector('.user-profile-widget');
+                if (userProfileWidget && theme === 'light') {
+                    userProfileWidget.style.backgroundColor = '#e9ecef';
+
+                    const userName = userProfileWidget.querySelector('.user-name');
+                    if (userName) {
+                        userName.style.color = '#212529';
+                    }
+                }
+            });
         })();
     </script>
 
@@ -433,6 +476,223 @@ function safeEcho($text, $default = '') {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="../../style/dahm/user_dashboard.css">
     <link rel="stylesheet" href="../../style/dahm/create_order.css">
+
+    <style>
+        /* Стилізований компонент користувача в лівому сайдбарі */
+        .user-profile-widget {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background-color: #232323;
+            border-radius: 10px;
+            width: 100%;
+            margin-bottom: 10px;
+            transition: background-color 0.2s ease;
+        }
+
+        .user-profile-widget:hover {
+            background-color: #2a2a2a;
+        }
+
+        .user-profile-widget .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .user-profile-widget .user-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .user-profile-widget .user-name {
+            font-size: 16px;
+            font-weight: 500;
+            color: white;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-grow: 1;
+        }
+
+        .user-avatar-placeholder {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #7a3bdf; /* Фіолетовий колір з скріншота */
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* Оновлені стилі для сайдбару з підтримкою світлої/темної теми */
+        .sidebar {
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+
+        :root[data-theme="light"] .sidebar {
+            background-color: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+        }
+
+        :root[data-theme="light"] .logo {
+            color: #1d9bf0;
+        }
+
+        :root[data-theme="light"] .nav-link {
+            color: #4b5563;
+        }
+
+        :root[data-theme="light"] .nav-link:hover {
+            background-color: #edf2f7;
+            color: #1a202c;
+        }
+
+        :root[data-theme="light"] .nav-link.active {
+            background-color: #e6f7ff;
+            color: #1d9bf0;
+        }
+
+        :root[data-theme="light"] .nav-divider {
+            background-color: #dee2e6;
+        }
+
+        :root[data-theme="light"] .sidebar-header {
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        :root[data-theme="light"] .user-profile-widget {
+            background-color: #e9ecef;
+        }
+
+        :root[data-theme="light"] .user-profile-widget .user-name {
+            color: #212529;
+        }
+
+        :root[data-theme="light"] .toggle-btn {
+            color: #4b5563;
+        }
+
+        :root[data-theme="light"] .user-avatar-placeholder {
+            background-color: #7a3bdf;
+            color: white;
+        }
+
+        /* Темна тема для сайдбару (вже повинна бути за замовчуванням) */
+        :root[data-theme="dark"] .user-profile-widget {
+            background-color: #232323;
+        }
+
+        :root[data-theme="dark"] .user-profile-widget .user-name {
+            color: white;
+        }
+
+        :root[data-theme="dark"] .user-avatar-placeholder {
+            background-color: #7a3bdf;
+            color: white;
+        }
+
+        :root[data-theme="dark"] .logo {
+            color: #1d9bf0;
+        }
+
+        /* Стилі для випадаючого меню */
+        .user-dropdown {
+            position: relative;
+        }
+
+        .user-dropdown-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .user-dropdown-btn:hover {
+            background-color: var(--hover-bg);
+        }
+
+        .user-avatar-small {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: #7a3bdf;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            overflow: hidden;
+        }
+
+        .user-dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 220px;
+            background-color: var(--dropdown-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: all 0.2s ease;
+        }
+
+        .user-dropdown-menu.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .user-dropdown-menu a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: background-color 0.2s;
+        }
+
+        .user-dropdown-menu a:hover {
+            background-color: var(--hover-bg);
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background-color: var(--border-color);
+            margin: 4px 0;
+        }
+
+        /* CSS Variables */
+        :root[data-theme="light"] {
+            --dropdown-bg: #ffffff;
+            --hover-bg: rgba(0, 0, 0, 0.05);
+            --border-color: #e2e8f0;
+        }
+
+        :root[data-theme="dark"] {
+            --dropdown-bg: #1e1e1e;
+            --hover-bg: rgba(255, 255, 255, 0.1);
+            --border-color: #2d2d2d;
+        }
+    </style>
 </head>
 <body>
 <div class="wrapper" id="mainWrapper">
@@ -444,16 +704,23 @@ function safeEcho($text, $default = '') {
                 <i class="bi bi-arrow-left"></i>
             </button>
         </div>
-        <div class="user-info">
+
+        <!-- Новий стилізований компонент користувача -->
+        <div class="user-profile-widget">
             <div class="user-avatar">
-                <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>
+                    <img src="<?php echo safeEcho($user['profile_pic']); ?>" alt="Фото профілю">
+                <?php else: ?>
+                    <div class="user-avatar-placeholder">
+                        <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                    </div>
+                <?php endif; ?>
             </div>
-            <div class="user-details">
-                <h3><?php echo safeEcho($user['username']); ?></h3>
-                <p><?php echo safeEcho($user['email']); ?></p>
+            <div class="user-name">
+                <?php echo safeEcho($user['username']); ?>
             </div>
-            <a href="../user/profile.php" class="edit-profile-btn">Редагувати профіль</a>
         </div>
+
         <nav class="sidebar-nav">
             <a href="/dah/dashboard.php" class="nav-link">
                 <i class="bi bi-speedometer2"></i>
@@ -484,17 +751,6 @@ function safeEcho($text, $default = '') {
                 <span>Вихід</span>
             </a>
             <div class="nav-divider"></div>
-            <div class="theme-switcher">
-                <span class="theme-label">Тема:</span>
-                <div class="theme-options">
-                    <a href="?theme=light" class="theme-option <?php echo $currentTheme === 'light' ? 'active' : ''; ?>">
-                        <i class="bi bi-sun"></i> Світла
-                    </a>
-                    <a href="?theme=dark" class="theme-option <?php echo $currentTheme === 'dark' ? 'active' : ''; ?>">
-                        <i class="bi bi-moon"></i> Темна
-                    </a>
-                </div>
-            </div>
         </nav>
     </aside>
 
@@ -515,7 +771,11 @@ function safeEcho($text, $default = '') {
                 <div class="user-dropdown">
                     <button class="user-dropdown-btn">
                         <div class="user-avatar-small">
-                            <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                            <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>
+                                <img src="<?php echo safeEcho($user['profile_pic']); ?>" alt="Фото профілю" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                            <?php else: ?>
+                                <?php echo strtoupper(substr($user['username'] ?? '', 0, 1)); ?>
+                            <?php endif; ?>
                         </div>
                         <span class="user-name"><?php echo safeEcho($user['username']); ?></span>
                         <i class="bi bi-chevron-down"></i>
@@ -523,11 +783,6 @@ function safeEcho($text, $default = '') {
                     <div class="user-dropdown-menu">
                         <a href="/dah/user/profile.php"><i class="bi bi-person"></i> Профіль</a>
                         <a href="/dah/user/settings.php"><i class="bi bi-gear"></i> Налаштування</a>
-                        <div class="dropdown-divider"></div>
-                        <a href="#" id="toggleThemeButton">
-                            <i class="bi <?php echo $currentTheme === 'dark' ? 'bi-sun' : 'bi-moon'; ?>"></i>
-                            <?php echo $currentTheme === 'dark' ? 'Світла тема' : 'Темна тема'; ?>
-                        </a>
                         <div class="dropdown-divider"></div>
                         <a href="/logout.php"><i class="bi bi-box-arrow-right"></i> Вихід</a>
                     </div>
@@ -639,7 +894,7 @@ function safeEcho($text, $default = '') {
                                 <div id="fileList" class="file-list">Файли не вибрано</div>
                             </div>
                             <small>
-                                Ви можете прикріпити фото, скріншоти або документи, пов'язані з проблемою (макс. 5 файлів, розмір до 5MB кожен)<br>
+                                Ви можете прикріпити фото, скріншоти або документи, пов'язані з проблемою (макс. 5 файлів, до 10 МБ кожен)
                                 Підтримуються формати: JPG, PNG, PDF, DOC, DOCX
                             </small>
                         </div>
@@ -659,7 +914,7 @@ function safeEcho($text, $default = '') {
                 <div class="help-section">
                     <div class="help-card">
                         <h3><i class="bi bi-question-circle"></i> Потрібна допомога?</h3>
-                        <p>Якщо у вас виникли питання щодо створення замовлення, ви можете зв'язатися з нашою службою підтримки:</p>
+                        <p>Якщо у вас виникли питання щодо створення замовлення, ви можете зв'язатися з нашою службою підтримки.</p>
                         <ul class="contact-list">
                             <li><i class="bi bi-telephone"></i> <a href="tel:+380123456789">+38 (012) 345-67-89</a></li>
                             <li><i class="bi bi-envelope"></i> <a href="mailto:support@lagodi.com">support@lagodi.com</a></li>
@@ -680,6 +935,7 @@ function safeEcho($text, $default = '') {
     <div class="toast-container" id="toast-container"></div>
 </div>
 
+<!-- Оригінальний JavaScript для форми create_order.js (збережений для функціоналу форми) -->
 <script src="../../jawa/dahj/create_order.js"></script>
 
 </body>

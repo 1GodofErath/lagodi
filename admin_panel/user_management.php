@@ -938,7 +938,7 @@ if (isset($_SESSION['success_message'])) {
             const element = originalCreateElement.call(document, tagName);
             if (tagName.toLowerCase() === 'div' && element.className === 'modal-backdrop') {
                 // Видалити position: fixed, якщо це буде додано
-                setTimeout(function() {
+                setTimeout(functioм n() {
                     if (element.style.position === 'fixed') {
                         element.style.position = '';
                     }

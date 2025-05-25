@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/lagodi.iml" filepath="$PROJECT_DIR$/.idea/lagodi.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/crypt.iml" filepath="$PROJECT_DIR$/.idea/crypt.iml" />
     </modules>
   </component>
 </project>

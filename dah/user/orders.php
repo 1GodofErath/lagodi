@@ -97,11 +97,12 @@ if (isset($_GET['id'])) {
             $orderDetails = $stmt->fetch(PDO::FETCH_ASSOC);
 
             // Отримуємо коментарі до замовлення
-            $commentsQuery = "SELECT c.*, u.username, u.role 
-                             FROM comments c
-                             LEFT JOIN users u ON c.user_id = u.id 
-                             WHERE c.order_id = :order_id 
-                             ORDER BY c.created_at DESC";  // Змінено на DESC для найновіших першими
+            // Отримуємо коментарі до замовлення
+            $commentsQuery = "SELECT c.*, u.username, u.role, u.profile_pic 
+                  FROM comments c
+                  LEFT JOIN users u ON c.user_id = u.id 
+                  WHERE c.order_id = :order_id 
+                  ORDER BY c.created_at DESC";  // Змінено на DESC для найновіших першими
 
             $commentsStmt = $db->prepare($commentsQuery);
             $commentsStmt->bindParam(':order_id', $orderId);
@@ -401,11 +402,11 @@ function getStatusName($statusCode) {
     }
 }
 
-// Функція для перевірки наявності прав адміністратора
+// Функція для перевірки наявності прав адміністратора - змінити на рядку 405-410
 if (!function_exists('hasAdminAccess')) {
     function hasAdminAccess() {
         global $user;
-        return isset($user['role']) && ($user['role'] === 'admin' || $user['role'] === 'manager');
+        return isset($user['role']) && in_array($user['role'], ['admin', 'manager', 'junior_admin']);
     }
 }
 ?>
@@ -1495,6 +1496,17 @@ if (!function_exists('hasAdminAccess')) {
                 grid-template-columns: 1fr;
             }
         }
+        .comment-avatar img {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            object-fit: cover;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .admin-comment .comment-avatar img {
+            border: 2px solid #e74c3c;
+        }
         <?php endif; ?>
     </style>
 </head>
@@ -1758,19 +1770,25 @@ if (!function_exists('hasAdminAccess')) {
                                         $isHidden = $index >= $showInitialComments;
                                         ?>
                                         <div class="comment-item <?php echo $comment['user_id'] == $user['id'] ? 'own-comment' : ''; ?>
-                                             <?php echo $comment['role'] === 'admin' ? 'admin-comment' : ''; ?>
-                                             <?php echo $isHidden ? 'hidden-comment' : ''; ?>"
+     <?php echo in_array($comment['role'], ['admin', 'junior_admin']) ? 'admin-comment' : ''; ?>
+     <?php echo $isHidden ? 'hidden-comment' : ''; ?>"
                                              id="comment-<?php echo $comment['id']; ?>">
                                             <div class="comment-header">
                                                 <div class="comment-user">
                                                     <div class="comment-avatar">
-                                                        <?php echo strtoupper(substr($comment['username'] ?? 'U', 0, 1)); ?>
+                                                        <?php if(isset($comment['profile_pic']) && !empty($comment['profile_pic'])): ?>
+                                                            <img src="<?php echo safeEcho($comment['profile_pic']); ?>" alt="Фото профілю" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">
+                                                        <?php else: ?>
+                                                            <?php echo strtoupper(substr($comment['username'] ?? 'U', 0, 1)); ?>
+                                                        <?php endif; ?>
                                                     </div>
                                                     <div class="comment-user-info">
                                                         <div class="comment-username" data-original-name="<?php echo safeEcho($comment['username']); ?>">
                                                             <?php echo safeEcho($comment['username']); ?>
                                                             <?php if ($comment['role'] === 'admin'): ?>
                                                                 <span class="admin-badge">Адмін</span>
+                                                            <?php elseif ($comment['role'] === 'junior_admin'): ?>
+                                                                <span class="admin-badge" style="background-color: #2980b9;">Молодший адмін</span>
                                                             <?php endif; ?>
                                                         </div>
                                                         <div class="comment-time"><?php echo formatDate($comment['created_at']); ?></div>
