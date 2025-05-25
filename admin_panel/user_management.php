@@ -8,6 +8,10 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     exit();
 }
 
+// Повідомлення про успіх або помилку
+$errorMessage = '';
+$successMessage = isset($_GET['success']) ? $_GET['success'] : '';
+
 // Параметри для пошуку та фільтрації
 $userSearch = $_GET['user_search'] ?? '';
 $userIdSearch = $_GET['user_id_search'] ?? '';
@@ -91,12 +95,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_user'])) {
         // Хешування пароля
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-        // Додавання нового користувача
-        $insertStmt = $conn->prepare("INSERT INTO users (username, password, role, email, created_at) VALUES (?, ?, ?, ?, NOW())");
-        $insertStmt->bind_param("ssss", $username, $hashedPassword, $role, $email);
-        $insertStmt->execute();
+        // Підготовка SQL-запиту для додавання користувача
+        if (empty($email)) {
+            // Безпосередньо встановлюємо email як NULL у запиті
+            $sql = "INSERT INTO users (username, password, role, email, created_at) VALUES (?, ?, ?, NULL, NOW())";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("sss", $username, $hashedPassword, $role);
+        } else {
+            // Перевірка на унікальність email (тільки якщо він не порожній)
+            $checkEmailStmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+            $checkEmailStmt->bind_param("s", $email);
+            $checkEmailStmt->execute();
+            $checkEmailResult = $checkEmailStmt->get_result();
 
-        if ($insertStmt->affected_rows > 0) {
+            if ($checkEmailResult->num_rows > 0) {
+                throw new Exception("Користувач з таким email вже існує");
+            }
+
+            $sql = "INSERT INTO users (username, password, role, email, created_at) VALUES (?, ?, ?, ?, NOW())";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("ssss", $username, $hashedPassword, $role, $email);
+        }
+
+        $stmt->execute();
+
+        if ($stmt->affected_rows > 0) {
             // Запис в лог
             $logStmt = $conn->prepare("INSERT INTO logs (user_id, action, created_at) VALUES (?, ?, NOW())");
             $userId = $_SESSION['user_id'];
@@ -104,11 +127,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_user'])) {
             $logStmt->bind_param("is", $userId, $action);
             $logStmt->execute();
 
-            $successMessage = "Користувача успішно додано";
-            header("Location: admin_dashboard.php?section=users&success=" . urlencode($successMessage));
+            // Записуємо повідомлення про успіх та перенаправляємо
+            $_SESSION['success_message'] = "Користувача {$username} успішно додано";
+            echo "<script>window.location.href = 'admin_dashboard.php?section=users';</script>";
             exit();
         } else {
-            throw new Exception("Помилка при додаванні користувача");
+            throw new Exception("Помилка при додаванні користувача: " . $conn->error);
         }
     } catch (Exception $e) {
         $errorMessage = $e->getMessage();
@@ -159,8 +183,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
             $logStmt->bind_param("is", $adminId, $action);
             $logStmt->execute();
 
-            $successMessage = "Пароль успішно змінено";
-            header("Location: admin_dashboard.php?section=users&success=" . urlencode($successMessage));
+            $_SESSION['success_message'] = "Пароль успішно змінено";
+            echo "<script>window.location.href = 'admin_dashboard.php?section=users';</script>";
             exit();
         } else {
             throw new Exception("Помилка при зміні пароля або пароль не було змінено");
@@ -170,8 +194,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
     }
 }
 
-// Повідомлення про успіх або помилку
-$successMessage = isset($_GET['success']) ? $_GET['success'] : '';
+// Показуємо повідомлення про успіх, якщо воно є в сесії
+if (isset($_SESSION['success_message'])) {
+    $successMessage = $_SESSION['success_message'];
+    unset($_SESSION['success_message']); // Видаляємо повідомлення після показу
+}
 ?>
 
 <!-- Контент секції користувачів -->
@@ -219,14 +246,14 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
     </div>
 
     <div class="filter-group d-flex align-items-end">
-        <button type="submit" class="btn btn-primary btn-with-icon">
+        <button type="submit" class="btn btn-primary btn-with-icon btn-xs">
             <i class="bi bi-search"></i> Пошук
         </button>
     </div>
 
     <?php if (!empty($userSearch) || !empty($userIdSearch)): ?>
         <div class="filter-actions">
-            <a href="?section=users" class="btn btn-sm btn-with-icon">
+            <a href="?section=users" class="btn btn-xs btn-with-icon">
                 <i class="bi bi-x-circle"></i> Очистити пошук
             </a>
         </div>
@@ -235,7 +262,7 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
 
 <!-- Кнопка додавання нового користувача -->
 <div class="d-flex justify-content-end mb-4">
-    <button type="button" id="addUserBtn" class="btn btn-success btn-with-icon">
+    <button type="button" id="addUserBtn" class="btn btn-success btn-with-icon btn-sm">
         <i class="bi bi-person-plus"></i> Додати користувача
     </button>
 </div>
@@ -293,10 +320,10 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                         </div>
 
                         <div>
-                            <button type="submit" class="btn btn-primary btn-with-icon">
+                            <button type="submit" class="btn btn-primary btn-with-icon btn-xs">
                                 <i class="bi bi-check-circle"></i> Оновити
                             </button>
-                            <button type="button" class="btn btn-info btn-with-icon"
+                            <button type="button" class="btn btn-info btn-with-icon btn-xs"
                                     onclick="showChangePasswordModal(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')">
                                 <i class="bi bi-key"></i> Змінити пароль
                             </button>
@@ -310,12 +337,12 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                                 <div><strong>Причина:</strong> <?= htmlspecialchars($user['block_reason']) ?></div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-success btn-with-icon mt-2" onclick="unblockUser(<?= $user['id'] ?>)">
+                        <button type="button" class="btn btn-success btn-with-icon btn-xs mt-2" onclick="unblockUser(<?= $user['id'] ?>)">
                             <i class="bi bi-unlock"></i> Розблокувати
                         </button>
                     <?php else: ?>
                         <div class="mt-3">
-                            <button type="button" class="btn btn-warning btn-with-icon" onclick="toggleBlockForm(<?= $user['id'] ?>)">
+                            <button type="button" class="btn btn-warning btn-with-icon btn-xs" onclick="toggleBlockForm(<?= $user['id'] ?>)">
                                 <i class="bi bi-lock"></i> Заблокувати
                             </button>
                         </div>
@@ -335,10 +362,10 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                                 </div>
 
                                 <div>
-                                    <button type="submit" class="btn btn-danger btn-with-icon">
+                                    <button type="submit" class="btn btn-danger btn-with-icon btn-xs">
                                         <i class="bi bi-lock-fill"></i> Заблокувати
                                     </button>
-                                    <button type="button" class="btn btn-secondary btn-with-icon ml-2" onclick="toggleBlockForm(<?= $user['id'] ?>)">
+                                    <button type="button" class="btn btn-secondary btn-with-icon btn-xs ml-2" onclick="toggleBlockForm(<?= $user['id'] ?>)">
                                         <i class="bi bi-x"></i> Скасувати
                                     </button>
                                 </div>
@@ -347,7 +374,7 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                     <?php endif; ?>
                 </div>
                 <div class="card-footer">
-                    <button type="button" class="btn btn-danger btn-with-icon" onclick="confirmDelete(<?= $user['id'] ?>)">
+                    <button type="button" class="btn btn-danger btn-with-icon btn-xs" onclick="confirmDelete(<?= $user['id'] ?>)">
                         <i class="bi bi-trash"></i> Видалити
                     </button>
                 </div>
@@ -372,7 +399,7 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                 <button type="button" class="modal-close" data-dismiss="modal" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
-                <form id="addUserForm" method="POST" action="admin_dashboard.php?section=users">
+                <form id="addUserForm" method="POST" action="" class="needs-validation" novalidate>
                     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
                     <input type="hidden" name="add_user" value="1">
 
@@ -385,11 +412,12 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                     </div>
 
                     <div class="form-group">
-                        <label for="new-email">Email</label>
+                        <label for="new-email">Email <small class="text-muted">(необов'язковий)</small></label>
                         <div class="input-group">
                             <span class="input-group-text"><i class="bi bi-envelope"></i></span>
                             <input type="email" id="new-email" name="email" class="form-control">
                         </div>
+                        <small class="text-muted">Залиште порожнім, якщо email відсутній</small>
                     </div>
 
                     <div class="form-group">
@@ -432,11 +460,12 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                             </select>
                         </div>
                     </div>
+
+                    <div class="modal-footer mt-3">
+                        <button type="button" class="btn btn-secondary btn-xs" data-dismiss="modal">Скасувати</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Додати</button>
+                    </div>
                 </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Скасувати</button>
-                <button type="submit" form="addUserForm" class="btn btn-primary">Додати</button>
             </div>
         </div>
     </div>
@@ -451,7 +480,7 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                 <button type="button" class="modal-close" data-dismiss="modal" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
-                <form id="changePasswordForm" method="POST" action="admin_dashboard.php?section=users">
+                <form id="changePasswordForm" method="POST" action="">
                     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
                     <input type="hidden" name="change_password" value="1">
                     <input type="hidden" name="user_id" id="change-password-user-id" value="">
@@ -484,11 +513,12 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                         </div>
                         <div id="change-password-match-message" class="mt-1"></div>
                     </div>
+
+                    <div class="modal-footer mt-3">
+                        <button type="button" class="btn btn-secondary btn-xs" data-dismiss="modal">Скасувати</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Змінити пароль</button>
+                    </div>
                 </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Скасувати</button>
-                <button type="submit" form="changePasswordForm" class="btn btn-primary">Змінити пароль</button>
             </div>
         </div>
     </div>
@@ -498,6 +528,16 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
     /* Стилі для модальних вікон користувачів */
     .modal-backdrop {
         background-color: rgba(0,0,0,0.5);
+        z-index: 998 !important; /* Знижуємо z-index, щоб не заважав модальним вікнам */
+        /* Видаляємо position: fixed; яка викликає проблеми */
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .modal {
+        z-index: 1050 !important; /* Підвищуємо z-index модалок */
     }
 
     .password-strength-meter .progress {
@@ -553,6 +593,27 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
         font-family: monospace;
         font-size: 0.8rem;
     }
+
+    /* Стилі для кнопок різних розмірів */
+    .btn-xs {
+        padding: 0.15rem 0.3rem;
+        font-size: 0.75rem;
+    }
+
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .btn-md {
+        padding: 0.5rem 1rem;
+        font-size: 1rem;
+    }
+
+    .btn-lg {
+        padding: 0.75rem 1.5rem;
+        font-size: 1.25rem;
+    }
 </style>
 
 <script>
@@ -565,18 +626,29 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
         if (userManagementLoaded) return;
         userManagementLoaded = true;
 
+        // Видаляємо всі існуючі modal-backdrop при завантаженні сторінки
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+            backdrop.remove();
+        });
+
         // Функції для роботи з модальними вікнами
         window.addModalBackdrop = function() {
+            // Спочатку видаляємо всі існуючі бекдропи
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+                backdrop.remove();
+            });
+
+            // Потім додаємо новий, якщо його немає
             if (!document.querySelector('.modal-backdrop')) {
                 const backdrop = document.createElement('div');
                 backdrop.className = 'modal-backdrop';
-                backdrop.style.position = 'fixed';
+                // Видаляємо position: fixed з inline-стилю
                 backdrop.style.top = '0';
                 backdrop.style.left = '0';
                 backdrop.style.width = '100%';
                 backdrop.style.height = '100%';
                 backdrop.style.backgroundColor = 'rgba(0,0,0,0.5)';
-                backdrop.style.zIndex = '999';
+                backdrop.style.zIndex = '998';
                 document.body.appendChild(backdrop);
             }
         };
@@ -590,10 +662,10 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
 
             document.body.classList.remove('modal-open');
 
-            const backdrop = document.querySelector('.modal-backdrop');
-            if (backdrop) {
+            // Видаляємо бекдроп
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
                 backdrop.remove();
-            }
+            });
         };
 
         // Функція для показу модального вікна додавання користувача
@@ -604,6 +676,11 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
             if (addUserBtn && addUserModal) {
                 addUserBtn.onclick = function(e) {
                     e.preventDefault();
+                    // Видаляємо існуючі бекдропи перед відкриттям модалки
+                    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+                        backdrop.remove();
+                    });
+
                     addUserModal.style.display = 'block';
                     addUserModal.classList.add('show');
                     document.body.classList.add('modal-open');
@@ -770,6 +847,11 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
                 const usernameField = document.getElementById('change-password-username');
 
                 if (userIdField && usernameField) {
+                    // Видаляємо існуючі бекдропи перед відкриттям модалки
+                    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+                        backdrop.remove();
+                    });
+
                     userIdField.value = userId;
                     usernameField.textContent = username;
 
@@ -842,4 +924,27 @@ $successMessage = isset($_GET['success']) ? $_GET['success'] : '';
     } else {
         document.addEventListener('DOMContentLoaded', initUserManagement);
     }
+
+    // Додаємо обробник подій, який буде видаляти всі modal-backdrop після повного завантаження сторінки
+    window.addEventListener('load', function() {
+        // Видаляємо всі існуючі modal-backdrop
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+            backdrop.remove();
+        });
+
+        // Додаємо новий метод для перезапису створення бекдропа, щоб не використовувати position: fixed
+        const originalCreateElement = document.createElement;
+        document.createElement = function(tagName) {
+            const element = originalCreateElement.call(document, tagName);
+            if (tagName.toLowerCase() === 'div' && element.className === 'modal-backdrop') {
+                // Видалити position: fixed, якщо це буде додано
+                setTimeout(function() {
+                    if (element.style.position === 'fixed') {
+                        element.style.position = '';
+                    }
+                }, 0);
+            }
+            return element;
+        };
+    });
 </script>
