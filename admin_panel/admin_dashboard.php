@@ -21,6 +21,16 @@ if (!in_array($_SESSION['role'], ['admin', 'junior_admin'])) {
     die("Доступ заборонено");
 }
 
+// Функція для логування дій
+function logAction($conn, $action) {
+    if (isset($_SESSION['user_id'])) {
+        $logQuery = "INSERT INTO logs (user_id, action, created_at) VALUES (?, ?, NOW())";
+        $logStmt = $conn->prepare($logQuery);
+        $logStmt->bind_param("is", $_SESSION['user_id'], $action);
+        $logStmt->execute();
+    }
+}
+
 // Get parameters
 $statusFilter = isset($_GET['status']) ? trim($_GET['status']) : 'all';
 $activeSection = $_GET['section'] ?? 'orders';
@@ -33,6 +43,7 @@ $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 $sortOrder = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 $statsUserFilter = $_GET['stats_user'] ?? 'all';
 $statsDateRange = $_GET['stats_date_range'] ?? '7days';
+$assignedFilter = isset($_GET['assigned']) ? $_GET['assigned'] : 'all'; // Додано фільтр за призначенням
 
 // Обробка повідомлень про успіх/помилку
 $successMessage = '';
@@ -50,6 +61,9 @@ if (isset($_GET['success'])) {
         case 'comment_added':
             $successMessage = "Коментар успішно додано";
             break;
+        case 'file_added':
+            $successMessage = "Файл успішно додано";
+            break;
         default:
             $successMessage = "Операція виконана успішно";
     }
@@ -65,6 +79,12 @@ if (isset($_GET['error'])) {
             break;
         case 'status_blocked':
             $errorMessage = "Неможливо змінити статус цього замовлення";
+            break;
+        case 'handler_blocked':
+            $errorMessage = "Молодші адміністратори не можуть змінювати відповідального за замовлення";
+            break;
+        case 'file_upload_failed':
+            $errorMessage = "Помилка при завантаженні файлу";
             break;
         default:
             $errorMessage = $_GET['error'];
@@ -240,6 +260,17 @@ try {
         }
     }
 
+    // Додаємо фільтр за призначенням
+    if ($assignedFilter !== 'all') {
+        if ($assignedFilter === 'assigned_to_me') {
+            $query .= " AND o.handler_id = " . $_SESSION['user_id'];
+        } elseif ($assignedFilter === 'unassigned') {
+            $query .= " AND o.handler_id IS NULL";
+        } elseif ($assignedFilter === 'assigned_others') {
+            $query .= " AND o.handler_id IS NOT NULL AND o.handler_id != " . $_SESSION['user_id'];
+        }
+    }
+
     // Додаємо пошук
     if (!empty($searchTerm)) {
         // Використовуємо prepared statement для запобігання SQL-ін'єкціям
@@ -360,7 +391,15 @@ try {
             AVG(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
                 WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
                 ELSE NOW() 
-            END)) as avg_completion_time
+            END)) as avg_completion_time,
+            MIN(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
+                WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
+                ELSE NOW() 
+            END)) as min_completion_time,
+            MAX(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
+                WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
+                ELSE NOW() 
+            END)) as max_completion_time
         FROM users u
         LEFT JOIN orders o ON u.id = o.handler_id
         WHERE u.role IN ('admin', 'junior_admin')
@@ -488,7 +527,15 @@ try {
                 AVG(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
                     WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
                     ELSE NOW() 
-                END)) as avg_completion_time
+                END)) as avg_completion_time,
+                MIN(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
+                    WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
+                    ELSE NOW() 
+                END)) as min_completion_time,
+                MAX(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
+                    WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
+                    ELSE NOW() 
+                END)) as max_completion_time
             FROM users u
             LEFT JOIN orders o ON u.id = o.handler_id
             WHERE u.id = ? AND o.created_at >= ?
@@ -667,19 +714,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_comment']) && iss
             $commentStmt->execute();
 
             // Логуємо дію
-            if (isset($_SESSION['user_id'])) {
-                $logQuery = "INSERT INTO logs (user_id, action, created_at) VALUES (?, ?, NOW())";
-                $logStmt = $conn->prepare($logQuery);
-                $action = "Додав коментар до замовлення #$orderIdForComment";
-                $logStmt->bind_param("is", $_SESSION['user_id'], $action);
-                $logStmt->execute();
-            }
+            logAction($conn, "Додав коментар до замовлення #$orderIdForComment");
 
             // Перенаправляємо на ту ж сторінку, щоб уникнути повторної відправки форми
             header("Location: admin_dashboard.php?section=orders&id=$orderIdForComment&success=comment_added");
             exit;
         } catch (Exception $e) {
             $errorMessage = "Помилка при додаванні коментаря: " . $e->getMessage();
+        }
+    }
+}
+
+// Обробка додавання файлу
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_file']) && isset($_POST['order_id']) && isset($_FILES['file'])) {
+    $orderIdForFile = filter_var($_POST['order_id'], FILTER_VALIDATE_INT);
+    $uploadedFile = $_FILES['file'];
+
+    if ($orderIdForFile && $uploadedFile['error'] === UPLOAD_ERR_OK) {
+        try {
+            // Створюємо директорію для зберігання файлів, якщо вона не існує
+            $uploadDir = '../../uploads/order_files/';
+            if (!file_exists($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+
+            // Генеруємо унікальне ім'я файлу
+            $filename = uniqid() . '_' . basename($uploadedFile['name']);
+            $uploadPath = $uploadDir . $filename;
+
+            // Перевіряємо, чи це дозволений тип файлу
+            $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'application/zip', 'application/x-rar-compressed'];
+            if (!in_array($uploadedFile['type'], $allowedTypes)) {
+                throw new Exception("Неприпустимий тип файлу. Дозволені формати: JPG, PNG, GIF, PDF, DOC, DOCX, TXT, ZIP, RAR.");
+            }
+
+            // Переміщуємо файл у кінцеву директорію
+            if (move_uploaded_file($uploadedFile['tmp_name'], $uploadPath)) {
+                // Зберігаємо інформацію про файл у базі даних
+                $fileQuery = "INSERT INTO order_files (order_id, file_path, original_name, file_type, file_size, uploaded_by, created_at) 
+                             VALUES (?, ?, ?, ?, ?, ?, NOW())";
+                $fileStmt = $conn->prepare($fileQuery);
+                $userId = $_SESSION['user_id'];
+                $filePath = $uploadPath;
+                $originalName = $uploadedFile['name'];
+                $fileType = $uploadedFile['type'];
+                $fileSize = $uploadedFile['size'];
+                $fileStmt->bind_param("isssii", $orderIdForFile, $filePath, $originalName, $fileType, $fileSize, $userId);
+                $fileStmt->execute();
+
+                // Логуємо дію
+                logAction($conn, "Додав файл до замовлення #$orderIdForFile: $originalName");
+
+                // Перенаправляємо на ту ж сторінку
+                header("Location: admin_dashboard.php?section=orders&id=$orderIdForFile&success=file_added");
+                exit;
+            } else {
+                throw new Exception("Помилка при завантаженні файлу");
+            }
+        } catch (Exception $e) {
+            $errorMessage = "Помилка при додаванні файлу: " . $e->getMessage();
+            header("Location: admin_dashboard.php?section=orders&id=$orderIdForFile&error=file_upload_failed");
+            exit;
         }
     }
 }
@@ -757,7 +852,7 @@ if (isset($_GET['id'])) {
 
     if ($orderId) {
         try {
-            $query = "SELECT o.*, u.username, c.name as category_name, h.username as handler_name 
+            $query = "SELECT o.*, u.username, c.name as category_name, h.username as handler_name, h.id as handler_id 
                      FROM orders o
                      LEFT JOIN users u ON o.user_id = u.id
                      LEFT JOIN users h ON o.handler_id = h.id
@@ -824,6 +919,8 @@ if (isset($_GET['id'])) {
                 $statusHistoryResult = $statusHistoryStmt->get_result();
                 $statusHistory = $statusHistoryResult->fetch_all(MYSQLI_ASSOC);
 
+                // Логуємо перегляд замовлення
+                logAction($conn, "Переглянув замовлення #$orderId");
             } else {
                 header("Location: admin_dashboard.php?section=orders");
                 exit;
@@ -1898,6 +1995,53 @@ if (isset($_GET['id'])) {
             box-shadow: var(--shadow-sm);
         }
 
+        /* Покращений інтерфейс завантаження файлів */
+        .file-upload-form {
+            margin-top: 20px;
+            background-color: var(--bg-secondary);
+            border-radius: 10px;
+            padding: 20px;
+            border: 2px dashed var(--primary-color);
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .file-upload-form:hover {
+            background-color: var(--primary-color-light);
+            border-color: var(--primary-color);
+        }
+
+        .file-upload-label {
+            display: block;
+            cursor: pointer;
+            padding: 15px;
+            width: 100%;
+            text-align: center;
+            font-weight: 500;
+            color: var(--primary-color);
+        }
+
+        .file-upload-input {
+            display: none;
+        }
+
+        .file-upload-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+
+        .file-upload-text {
+            margin-bottom: 15px;
+            color: var(--text-secondary);
+        }
+
+        .file-selected {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: var(--success-color);
+        }
+
         /* Пагінація */
         .pagination {
             display: flex;
@@ -2148,16 +2292,17 @@ if (isset($_GET['id'])) {
             border: 1px solid var(--border-color);
         }
 
+        /* Зменшено розмір профілю користувача */
         .admin-profile-avatar {
-            width: 80px;
-            height: 80px;
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
             background-color: var(--primary-color);
             color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2rem;
+            font-size: 1.5rem;
             font-weight: 600;
         }
 
@@ -2166,7 +2311,7 @@ if (isset($_GET['id'])) {
         }
 
         .admin-profile-name {
-            font-size: 1.5rem;
+            font-size: 1.3rem;
             font-weight: 700;
             color: var(--text-primary);
             margin-bottom: 5px;
@@ -2174,7 +2319,7 @@ if (isset($_GET['id'])) {
 
         .admin-profile-role {
             color: var(--text-secondary);
-            font-size: 1rem;
+            font-size: 0.9rem;
             display: flex;
             align-items: center;
             gap: 5px;
@@ -2350,28 +2495,92 @@ if (isset($_GET['id'])) {
             color: var(--text-primary);
         }
 
+        /* Модальні вікна */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            overflow: auto;
+            padding: 50px 0;
+        }
+
+        .modal.show {
+            display: block;
+        }
+
+        .modal-dialog {
+            max-width: 500px;
+            margin: 1.75rem auto;
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            box-shadow: var(--shadow-lg);
+            transform: translateY(0);
+            transition: transform 0.3s ease-out;
+        }
+
+        .modal-content {
+            position: relative;
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-title {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0;
+            margin: 0;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .modal-footer {
+            padding: 15px 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
         /* Додаткові утиліти */
         .text-primary { color: var(--primary-color) !important; }
         .text-success { color: var(--success-color) !important; }
         .text-danger { color: var(--danger-color) !important; }
         .text-warning { color: var(--warning-color) !important; }
         .text-secondary { color: var(--text-secondary) !important; }
-        .text-accent-1 { color: var(--accent-color-1) !important; }
-        .text-accent-2 { color: var(--accent-color-2) !important; }
-        .text-accent-3 { color: var(--accent-color-3) !important; }
-        .text-accent-4 { color: var(--accent-color-4) !important; }
-        .text-accent-5 { color: var(--accent-color-5) !important; }
 
         .bg-primary { background-color: var(--primary-color) !important; }
         .bg-success { background-color: var(--success-color) !important; }
         .bg-danger { background-color: var(--danger-color) !important; }
         .bg-warning { background-color: var(--warning-color) !important; }
         .bg-secondary { background-color: var(--secondary-color) !important; }
-        .bg-accent-1 { background-color: var(--accent-color-1) !important; }
-        .bg-accent-2 { background-color: var(--accent-color-2) !important; }
-        .bg-accent-3 { background-color: var(--accent-color-3) !important; }
-        .bg-accent-4 { background-color: var(--accent-color-4) !important; }
-        .bg-accent-5 { background-color: var(--accent-color-5) !important; }
 
         .mt-1 { margin-top: 0.25rem !important; }
         .mt-2 { margin-top: 0.5rem !important; }
@@ -2543,21 +2752,6 @@ if (isset($_GET['id'])) {
             .btn {
                 padding: 0.6rem 1.2rem;
             }
-
-            .timeline {
-                padding-left: 25px;
-            }
-
-            .timeline::before {
-                left: 12px;
-            }
-
-            .timeline-dot {
-                left: -25px;
-                width: 16px;
-                height: 16px;
-                font-size: 0.7rem;
-            }
         }
 
         /* Анімації */
@@ -2578,127 +2772,6 @@ if (isset($_GET['id'])) {
 
         .pulse {
             animation: pulse 2s infinite;
-        }
-
-        /* Модальні вікна */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            overflow: auto;
-            padding: 50px 0;
-        }
-
-        .modal.show {
-            display: block;
-        }
-
-        .modal-dialog {
-            max-width: 500px;
-            margin: 1.75rem auto;
-            background-color: var(--card-bg);
-            border-radius: 10px;
-            box-shadow: var(--shadow-lg);
-            transform: translateY(0);
-            transition: transform 0.3s ease-out;
-        }
-
-        .modal-content {
-            position: relative;
-            background-color: var(--card-bg);
-            border-radius: 10px;
-            overflow: hidden;
-            border: 1px solid var(--border-color);
-        }
-
-        .modal-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 15px 20px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .modal-title {
-            margin: 0;
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: 0;
-            margin: 0;
-        }
-
-        .modal-body {
-            padding: 20px;
-        }
-
-        .modal-footer {
-            padding: 15px 20px;
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }
-
-        /* Стилі для welcome-avatar */
-        .welcome-avatar {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background-color: var(--primary-color);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            font-size: 1.25rem;
-        }
-
-        /* Стилі для часу */
-        .time-display {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .time-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-
-        .time-value {
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        /* Стилі для системної інформації */
-        .system-info {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        /* Стилі для індикатора ролі */
-        .role-indicator {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
         }
     </style>
 </head>
@@ -2764,599 +2837,682 @@ if (isset($_GET['id'])) {
                 <i class="bi bi-journal-text"></i>
                 Логи
             </a>
+        <?php elseif ($_SESSION['role'] === 'junior_admin'): ?>
+            <a href="?section=my_stats" data-section="my_stats" class="<?= $activeSection === 'my_stats' ? 'active' : '' ?>">
+                <i class="bi bi-person-badge"></i>
+                Мої метрики
+            </a>
         <?php endif; ?>
     </div>
 
     <!-- Сповіщення -->
-    <?php if ($errorMessage): ?>
-        <div class="alert alert-danger">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <div><?php echo $errorMessage; ?></div>
-        </div>
-    <?php endif; ?>
+<?php if ($errorMessage): ?>
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div><?php echo $errorMessage; ?></div>
+    </div>
+<?php endif; ?>
 
-    <?php if ($successMessage): ?>
-        <div class="alert alert-success">
-            <i class="bi bi-check-circle-fill"></i>
-            <div><?php echo $successMessage; ?></div>
-        </div>
-    <?php endif; ?>
+<?php if ($successMessage): ?>
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle-fill"></i>
+        <div><?php echo $successMessage; ?></div>
+    </div>
+<?php endif; ?>
 
     <!-- Секція замовлень -->
-    <section id="orders" class="fade-in" style="display: <?= $activeSection === 'orders' ? 'block' : 'none' ?>;">
-        <?php if (isset($orderDetails)): ?>
-            <!-- Детальний перегляд замовлення -->
-            <div class="order-detail-header">
-                <div class="order-detail-title">
-                    <a href="?section=orders" class="back-link">
-                        <i class="bi bi-arrow-left"></i>
-                    </a>
-                    <i class="bi bi-clipboard-check text-primary"></i>
-                    Замовлення #<?php echo $orderDetails['id']; ?>
+<section id="orders" class="fade-in" style="display: <?= $activeSection === 'orders' ? 'block' : 'none' ?>;">
+<?php if (isset($orderDetails)): ?>
+    <!-- Детальний перегляд замовлення -->
+    <div class="order-detail-header">
+        <div class="order-detail-title">
+            <a href="?section=orders" class="back-link">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <i class="bi bi-clipboard-check text-primary"></i>
+            Замовлення #<?php echo $orderDetails['id']; ?>
+        </div>
+        <div class="badge <?php echo getStatusClass($orderDetails['status']); ?>">
+            <?php echo safeEcho($orderDetails['status']); ?>
+        </div>
+    </div>
+
+    <!-- Картка з деталями замовлення -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="card-title"><?php echo safeEcho($orderDetails['service']); ?></h2>
+
+            <?php if (!empty($orderDetails['handler_name'])): ?>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-secondary">Обробляє:</span>
+                    <span class="badge bg-primary"><?php echo safeEcho($orderDetails['handler_name']); ?></span>
                 </div>
-                <div class="badge <?php echo getStatusClass($orderDetails['status']); ?>">
-                    <?php echo safeEcho($orderDetails['status']); ?>
+            <?php endif; ?>
+        </div>
+        <div class="card-body">
+            <div class="detail-grid">
+                <div class="detail-item">
+                    <div class="detail-label">Номер замовлення</div>
+                    <div class="detail-value">#<?php echo $orderDetails['id']; ?></div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Клієнт</div>
+                    <div class="detail-value"><?php echo safeEcho($orderDetails['username']); ?></div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Категорія</div>
+                    <div class="detail-value">
+                        <?php echo !empty(trim($orderDetails['category_name'] ?? '')) ? safeEcho($orderDetails['category_name']) : 'Не вказано'; ?>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Тип пристрою</div>
+                    <div class="detail-value">
+                        <?php echo !empty(trim($orderDetails['device_type'] ?? '')) ? safeEcho($orderDetails['device_type']) : 'Не вказано'; ?>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Модель пристрою</div>
+                    <div class="detail-value">
+                        <?php echo !empty(trim($orderDetails['device_model'] ?? '')) ? safeEcho($orderDetails['device_model']) : 'Не вказано'; ?>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Дата створення</div>
+                    <div class="detail-value"><?php echo formatDate($orderDetails['created_at']); ?></div>
                 </div>
             </div>
 
-            <!-- Картка з деталями замовлення -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title"><?php echo safeEcho($orderDetails['service']); ?></h2>
-
-                    <?php if (!empty($orderDetails['handler_name'])): ?>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="text-secondary">Обробляє:</span>
-                            <span class="badge bg-primary"><?php echo safeEcho($orderDetails['handler_name']); ?></span>
-                        </div>
-                    <?php endif; ?>
-                </div>
-                <div class="card-body">
-                    <div class="detail-grid">
-                        <div class="detail-item">
-                            <div class="detail-label">Номер замовлення</div>
-                            <div class="detail-value">#<?php echo $orderDetails['id']; ?></div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Клієнт</div>
-                            <div class="detail-value"><?php echo safeEcho($orderDetails['username']); ?></div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Категорія</div>
-                            <div class="detail-value">
-                                <?php echo !empty(trim($orderDetails['category_name'] ?? '')) ? safeEcho($orderDetails['category_name']) : 'Не вказано'; ?>
-                            </div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Тип пристрою</div>
-                            <div class="detail-value">
-                                <?php echo !empty(trim($orderDetails['device_type'] ?? '')) ? safeEcho($orderDetails['device_type']) : 'Не вказано'; ?>
-                            </div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Модель пристрою</div>
-                            <div class="detail-value">
-                                <?php echo !empty(trim($orderDetails['device_model'] ?? '')) ? safeEcho($orderDetails['device_model']) : 'Не вказано'; ?>
-                            </div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Дата створення</div>
-                            <div class="detail-value"><?php echo formatDate($orderDetails['created_at']); ?></div>
+            <?php if (!empty($orderDetails['description'])): ?>
+                <div class="mt-4">
+                    <h3 class="mb-3"><i class="bi bi-card-text text-primary mr-2"></i> Опис</h3>
+                    <div class="card">
+                        <div class="card-body">
+                            <?php echo nl2br(safeEcho($orderDetails['description'])); ?>
                         </div>
                     </div>
+                </div>
+            <?php endif; ?>
 
-                    <?php if (!empty($orderDetails['description'])): ?>
-                        <div class="mt-4">
-                            <h3 class="mb-3"><i class="bi bi-card-text text-primary mr-2"></i> Опис</h3>
-                            <div class="card">
-                                <div class="card-body">
-                                    <?php echo nl2br(safeEcho($orderDetails['description'])); ?>
+            <!-- Історія зміни статусу -->
+            <?php if (!empty($statusHistory)): ?>
+                <div class="mt-4">
+                    <h3 class="mb-3"><i class="bi bi-clock-history text-primary mr-2"></i> Історія змін статусу</h3>
+                    <div class="timeline">
+                        <?php foreach ($statusHistory as $historyItem): ?>
+                            <div class="timeline-item">
+                                <div class="timeline-dot">
+                                    <i class="bi bi-clock"></i>
                                 </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <!-- Історія зміни статусу -->
-                    <?php if (!empty($statusHistory)): ?>
-                        <div class="mt-4">
-                            <h3 class="mb-3"><i class="bi bi-clock-history text-primary mr-2"></i> Історія змін статусу</h3>
-                            <div class="timeline">
-                                <?php foreach ($statusHistory as $historyItem): ?>
-                                    <div class="timeline-item">
-                                        <div class="timeline-dot">
-                                            <i class="bi bi-clock"></i>
+                                <div class="timeline-content">
+                                    <div class="timeline-header">
+                                        <div class="timeline-title">
+                                            Статус змінено на <span class="badge <?= getStatusClass($historyItem['new_status']) ?>"><?= safeEcho($historyItem['new_status']) ?></span>
                                         </div>
-                                        <div class="timeline-content">
-                                            <div class="timeline-header">
-                                                <div class="timeline-title">
-                                                    Статус змінено на <span class="badge <?= getStatusClass($historyItem['new_status']) ?>"><?= safeEcho($historyItem['new_status']) ?></span>
-                                                </div>
-                                                <div class="timeline-date"><?= formatDate($historyItem['created_at']) ?></div>
-                                            </div>
-                                            <div class="timeline-body">
-                                                <div class="d-flex align-items-center gap-2 mb-2">
-                                                    <span>Попередній статус:</span>
-                                                    <span class="badge <?= getStatusClass($historyItem['previous_status']) ?>"><?= safeEcho($historyItem['previous_status']) ?></span>
-                                                </div>
-                                                <div class="d-flex align-items-center gap-2">
-                                                    <span>Змінив:</span>
-                                                    <strong><?= safeEcho($historyItem['username']) ?></strong>
-                                                    <?php if (in_array($historyItem['role'], ['admin', 'junior_admin'])): ?>
-                                                        <span class="badge <?= $historyItem['role'] === 'admin' ? 'status-canceled' : 'status-in-progress' ?>">
+                                        <div class="timeline-date"><?= formatDate($historyItem['created_at']) ?></div>
+                                    </div>
+                                    <div class="timeline-body">
+                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                            <span>Попередній статус:</span>
+                                            <span class="badge <?= getStatusClass($historyItem['previous_status']) ?>"><?= safeEcho($historyItem['previous_status']) ?></span>
+                                        </div>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span>Змінив:</span>
+                                            <strong><?= safeEcho($historyItem['username']) ?></strong>
+                                            <?php if (in_array($historyItem['role'], ['admin', 'junior_admin'])): ?>
+                                                <span class="badge <?= $historyItem['role'] === 'admin' ? 'status-canceled' : 'status-in-progress' ?>">
                                                         <?= $historyItem['role'] === 'admin' ? 'Адмін' : 'Мол. Адмін' ?>
                                                     </span>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </div>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
-                                <?php endforeach; ?>
+                                </div>
                             </div>
-                        </div>
-                    <?php endif; ?>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
-                <div class="card-footer">
-                    <div>Створено: <?php echo formatDate($orderDetails['created_at']); ?></div>
-                </div>
+            <?php endif; ?>
+        </div>
+        <div class="card-footer">
+            <div>Створено: <?php echo formatDate($orderDetails['created_at']); ?></div>
+        </div>
+    </div>
+
+    <!-- Форма зміни статусу -->
+    <?php if ($_SESSION['role'] === 'admin' || $_SESSION['role'] === 'junior_admin'): ?>
+        <div class="status-form">
+            <div class="status-form-header">
+                <i class="bi bi-toggles text-primary"></i>
+                Зміна статусу замовлення
             </div>
 
-            <!-- Форма зміни статусу -->
-            <?php if ($_SESSION['role'] === 'admin' || $_SESSION['role'] === 'junior_admin'): ?>
-                <div class="status-form">
-                    <div class="status-form-header">
-                        <i class="bi bi-toggles text-primary"></i>
-                        Зміна статусу замовлення
-                    </div>
+            <?php
+            $isStatusLocked = in_array($orderDetails['status'], ['Завершено', 'Виконано', 'Не можливо виконати']);
+            $canChangeStatus = $_SESSION['role'] === 'admin' || !$isStatusLocked;
+            ?>
 
-                    <?php
-                    $isStatusLocked = in_array($orderDetails['status'], ['Завершено', 'Виконано', 'Не можливо виконати']);
-                    $canChangeStatus = $_SESSION['role'] === 'admin' || !$isStatusLocked;
-                    ?>
-
-                    <?php if ($isStatusLocked && $_SESSION['role'] !== 'admin'): ?>
-                        <div class="status-locked-message mt-2 mb-3">
-                            <i class="bi bi-lock-fill lock-icon-animated"></i>
-                            <span>Ви не можете змінювати статус замовлення "<?php echo $orderDetails['status']; ?>"</span>
-                        </div>
-                    <?php endif; ?>
-
-                    <form method="POST" action="update_status.php" class="d-flex flex-column gap-3">
-                        <input type="hidden" name="order_id" value="<?= $orderDetails['id'] ?>">
-                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-                        <select name="status" class="status-select" <?= $canChangeStatus ? '' : 'disabled' ?>>
-                            <option value="Новий" <?= $orderDetails['status'] === 'Новий' ? 'selected' : '' ?>>Новий</option>
-                            <option value="В роботі" <?= $orderDetails['status'] === 'В роботі' ? 'selected' : '' ?>>В роботі</option>
-                            <option value="Очікується" <?= $orderDetails['status'] === 'Очікується' ? 'selected' : '' ?>>Очікується</option>
-                            <option value="Очікується поставки товару" <?= $orderDetails['status'] === 'Очікується поставки товару' ? 'selected' : '' ?>>Очікується поставки товару</option>
-                            <option value="Завершено" <?= $orderDetails['status'] === 'Завершено' ? 'selected' : '' ?>>Завершено</option>
-                            <option value="Не можливо виконати" <?= $orderDetails['status'] === 'Не можливо виконати' ? 'selected' : '' ?>>Не можливо виконати</option>
-                        </select>
-                        <div class="d-flex gap-3">
-                            <button type="submit" class="btn btn-primary btn-with-icon" <?= $canChangeStatus ? '' : 'disabled' ?>>
-                                <i class="bi bi-check-circle"></i> Змінити статус
-                            </button>
-
-                            <!-- Кнопка для призначення собі замовлення -->
-                            <?php if (empty($orderDetails['handler_id']) && !$isStatusLocked): ?>
-                                <button type="button" class="btn btn-assign btn-with-icon btn-assign-pulse" onclick="assignToMe(<?= $orderDetails['id'] ?>)">
-                                    <i class="bi bi-person-fill-check"></i> Призначити собі
-                                </button>
-                            <?php elseif ($orderDetails['handler_id'] == $_SESSION['user_id']): ?>
-                                <button type="button" class="btn btn-success btn-with-icon" disabled>
-                                    <i class="bi bi-person-check-fill"></i> Призначено вам
-                                </button>
-                            <?php else: ?>
-                                <button type="button" class="btn btn-secondary btn-with-icon" disabled>
-                                    <i class="bi bi-person-fill"></i> Призначено іншому адміну
-                                </button>
-                            <?php endif; ?>
-                        </div>
-                    </form>
+            <?php if ($isStatusLocked && $_SESSION['role'] !== 'admin'): ?>
+                <div class="status-locked-message mt-2 mb-3">
+                    <i class="bi bi-lock-fill lock-icon-animated"></i>
+                    <span>Ви не можете змінювати статус замовлення "<?php echo $orderDetails['status']; ?>"</span>
                 </div>
             <?php endif; ?>
 
-            <!-- Файли -->
-            <?php if (!empty($orderAttachedFiles)): ?>
-                <div class="files-section">
-                    <div class="files-header">
-                        <div class="files-title">
-                            <i class="bi bi-paperclip text-primary"></i>
-                            Прикріплені файли
-                            <span class="badge bg-primary"><?= count($orderAttachedFiles) ?></span>
-                        </div>
-                    </div>
-                    <div class="files-grid">
-                        <?php foreach ($orderAttachedFiles as $file): ?>
-                            <?php
-                            $ext = pathinfo($file['original_name'], PATHINFO_EXTENSION);
-                            $icon = 'bi-file-earmark';
+            <form method="POST" action="update_status.php" class="d-flex flex-column gap-3">
+                <input type="hidden" name="order_id" value="<?= $orderDetails['id'] ?>">
+                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                <select name="status" class="status-select" <?= $canChangeStatus ? '' : 'disabled' ?>>
+                    <option value="Новий" <?= $orderDetails['status'] === 'Новий' ? 'selected' : '' ?>>Новий</option>
+                    <option value="В роботі" <?= $orderDetails['status'] === 'В роботі' ? 'selected' : '' ?>>В роботі</option>
+                    <option value="Очікується" <?= $orderDetails['status'] === 'Очікується' ? 'selected' : '' ?>>Очікується</option>
+                    <option value="Очікується поставки товару" <?= $orderDetails['status'] === 'Очікується поставки товару' ? 'selected' : '' ?>>Очікується поставки товару</option>
+                    <option value="Завершено" <?= $orderDetails['status'] === 'Завершено' ? 'selected' : '' ?>>Завершено</option>
+                    <option value="Не можливо виконати" <?= $orderDetails['status'] === 'Не можливо виконати' ? 'selected' : '' ?>>Не можливо виконати</option>
+                </select>
+                <div class="d-flex gap-3">
+                    <button type="submit" class="btn btn-primary btn-with-icon" <?= $canChangeStatus ? '' : 'disabled' ?>>
+                        <i class="bi bi-check-circle"></i> Змінити статус
+                    </button>
 
-                            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
-                                $icon = 'bi-file-earmark-image';
-                            } elseif (in_array($ext, ['pdf'])) {
-                                $icon = 'bi-file-earmark-pdf';
-                            } elseif (in_array($ext, ['doc', 'docx'])) {
-                                $icon = 'bi-file-earmark-word';
-                            } elseif (in_array($ext, ['xls', 'xlsx'])) {
-                                $icon = 'bi-file-earmark-excel';
-                            } elseif (in_array($ext, ['zip', 'rar', '7z'])) {
-                                $icon = 'bi-file-earmark-zip';
-                            } elseif (in_array($ext, ['txt'])) {
-                                $icon = 'bi-file-earmark-text';
-                            }
-                            ?>
-                            <div class="file-item">
-                                <div class="file-info">
-                                    <i class="bi <?php echo $icon; ?> file-icon"></i>
-                                    <span class="file-name"><?php echo safeEcho($file['original_name']); ?></span>
-                                </div>
-                                <div class="file-actions">
-                                    <a href="<?php echo isset($file['file_path']) ? str_replace('../../', '/', $file['file_path']) : '#'; ?>"
-                                       download class="file-download-btn"
-                                       title="Завантажити файл">
-                                        <i class="bi bi-download"></i>
+                    <!-- Кнопка для призначення собі замовлення -->
+                    <?php if (empty($orderDetails['handler_id']) && !$isStatusLocked): ?>
+                        <button type="button" class="btn btn-assign btn-with-icon btn-assign-pulse" onclick="assignToMe(<?= $orderDetails['id'] ?>)">
+                            <i class="bi bi-person-fill-check"></i> Призначити собі
+                        </button>
+                    <?php elseif ($orderDetails['handler_id'] == $_SESSION['user_id']): ?>
+                        <button type="button" class="btn btn-success btn-with-icon" disabled>
+                            <i class="bi bi-person-check-fill"></i> Призначено вам
+                        </button>
+                    <?php elseif ($_SESSION['role'] === 'admin'): ?>
+                        <div class="dropdown">
+                            <button type="button" class="btn btn-warning btn-with-icon dropdown-toggle" id="changeHandlerBtn">
+                                <i class="bi bi-person-fill"></i> Змінити відповідального
+                            </button>
+                            <div class="dropdown-menu" id="handlerDropdown" style="display: none;">
+                                <div class="dropdown-header">Виберіть адміністратора</div>
+                                <?php
+                                foreach ($adminList as $admin):
+                                    $isSelected = $admin['id'] == $orderDetails['handler_id'];
+                                    ?>
+                                    <a class="dropdown-item <?= $isSelected ? 'active' : '' ?>"
+                                       href="change_handler.php?order_id=<?= $orderDetails['id'] ?>&handler_id=<?= $admin['id'] ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>">
+                                        <?= safeEcho($admin['username']) ?>
+                                        (<?= $admin['role'] === 'admin' ? 'Адмін' : 'Мол. Адмін' ?>)
+                                        <?= $isSelected ? '<i class="bi bi-check text-success"></i>' : '' ?>
                                     </a>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- Коментарі -->
-            <div class="comments-section">
-                <div class="comments-header">
-                    <div class="comments-title">
-                        <i class="bi bi-chat-left-text text-primary"></i>
-                        Коментарі
-                        <?php if (!empty($orderComments)): ?>
-                            <span class="comments-count"><?= $totalComments ?? count($orderComments) ?></span>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <?php if (!empty($orderComments)): ?>
-                    <div class="comments-list">
-                        <?php foreach ($orderComments as $comment):
-                            $isAdminComment = in_array($comment['role'], ['admin', 'junior_admin']);
-                            $isOwnComment = isset($_SESSION['user_id']) && $comment['user_id'] == $_SESSION['user_id'];
-                            ?>
-                            <div class="comment-item <?= $isOwnComment ? 'own-comment' : '' ?> <?= $isAdminComment ? 'admin-comment' : '' ?>">
-                                <div class="comment-header">
-                                    <div class="comment-user">
-                                        <div class="comment-avatar">
-                                            <?php echo strtoupper(substr($comment['username'] ?? 'U', 0, 1)); ?>
-                                        </div>
-                                        <div class="comment-user-info">
-                                            <div class="comment-username">
-                                                <?php echo safeEcho($comment['username']); ?>
-                                                <?php if ($isAdminComment): ?>
-                                                    <span class="admin-badge"><?= $comment['role'] === 'admin' ? 'Адмін' : 'Мол. Адмін' ?></span>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="comment-time"><?php echo formatDate($comment['created_at']); ?></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="comment-content">
-                                    <?php echo nl2br(safeEcho($comment['content'])); ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-
-                    <?php if (isset($totalCommentPages) && $totalCommentPages > 1): ?>
-                        <div class="pagination mt-4">
-                            <?php for ($i = 1; $i <= $totalCommentPages; $i++): ?>
-                                <a href="?section=orders&id=<?= $orderDetails['id'] ?>&comment_page=<?= $i ?>"
-                                   class="pagination-link <?= $i == ($commentPage ?? 1) ? 'active' : '' ?>">
-                                    <?= $i ?>
+                                <?php endforeach; ?>
+                                <div class="dropdown-divider"></div>
+                                <a class="dropdown-item"
+                                   href="change_handler.php?order_id=<?= $orderDetails['id'] ?>&handler_id=0&csrf_token=<?= $_SESSION['csrf_token'] ?>">
+                                    <i class="bi bi-x-circle"></i> Зняти відповідального
                                 </a>
-                            <?php endfor; ?>
+                            </div>
                         </div>
+                    <?php else: ?>
+                        <button type="button" class="btn btn-secondary btn-with-icon" disabled>
+                            <i class="bi bi-person-fill"></i> Призначено іншому адміну
+                        </button>
                     <?php endif; ?>
-                <?php else: ?>
-                    <div class="empty-state">
-                        <div class="empty-state-icon">
-                            <i class="bi bi-chat-left"></i>
-                        </div>
-                        <div class="empty-state-text">Поки що немає коментарів</div>
-                    </div>
-                <?php endif; ?>
+                </div>
+            </form>
+        </div>
+    <?php endif; ?>
 
-                <?php if (canAddComments($orderDetails['status'])): ?>
-                    <div class="comment-form">
-                        <div class="comment-form-header">
-                            <i class="bi bi-plus-circle text-primary"></i> Додати новий коментар
-                        </div>
-                        <form method="post" action="admin_dashboard.php">
-                            <input type="hidden" name="order_id" value="<?php echo $orderDetails['id']; ?>">
-                            <textarea name="comment" placeholder="Напишіть ваш коментар тут..." required></textarea>
-                            <button type="submit" name="add_comment" class="btn btn-primary btn-with-icon">
-                                <i class="bi bi-send"></i> Відправити коментар
-                            </button>
-                        </form>
-                    </div>
-                <?php else: ?>
-                    <div class="status-locked-message mt-4">
-                        <i class="bi bi-lock-fill lock-icon-animated"></i>
-                        <span>Додавання коментарів недоступне для замовлень зі статусом "<?php echo $orderDetails['status']; ?>"</span>
-                    </div>
-                <?php endif; ?>
+    <!-- Файли -->
+    <div class="files-section">
+        <div class="files-header">
+            <div class="files-title">
+                <i class="bi bi-paperclip text-primary"></i>
+                Прикріплені файли
+                <span class="badge bg-primary"><?= count($orderAttachedFiles) ?></span>
             </div>
 
+            <!-- Кнопка додавання файлу (тільки для адміністраторів) -->
+            <?php if ($_SESSION['role'] === 'admin'): ?>
+                <button type="button" class="btn btn-primary btn-with-icon btn-sm" id="addFileBtn">
+                    <i class="bi bi-plus-circle"></i> Додати файл
+                </button>
+            <?php endif; ?>
+        </div>
+
+        <!-- Форма завантаження файлів (схована за замовчуванням) -->
+        <div id="fileUploadForm" class="file-upload-form" style="display: none;">
+            <form method="POST" action="admin_dashboard.php" enctype="multipart/form-data">
+                <input type="hidden" name="order_id" value="<?= $orderDetails['id'] ?>">
+                <input type="hidden" name="add_file" value="1">
+                <label for="file-upload" class="file-upload-label">
+                    <div class="file-upload-icon">
+                        <i class="bi bi-cloud-arrow-up"></i>
+                    </div>
+                    <div class="file-upload-text">Перетягніть файл сюди або натисніть, щоб вибрати</div>
+                    <input type="file" id="file-upload" name="file" class="file-upload-input" required>
+                    <div class="file-selected" id="file-selected-name"></div>
+                </label>
+                <button type="submit" class="btn btn-primary btn-with-icon mt-3">
+                    <i class="bi bi-cloud-upload"></i> Завантажити файл
+                </button>
+            </form>
+        </div>
+
+        <?php if (!empty($orderAttachedFiles)): ?>
+            <div class="files-grid mt-3">
+                <?php foreach ($orderAttachedFiles as $file): ?>
+                    <?php
+                    $ext = pathinfo($file['original_name'], PATHINFO_EXTENSION);
+                    $icon = 'bi-file-earmark';
+
+                    if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+                        $icon = 'bi-file-earmark-image';
+                    } elseif (in_array($ext, ['pdf'])) {
+                        $icon = 'bi-file-earmark-pdf';
+                    } elseif (in_array($ext, ['doc', 'docx'])) {
+                        $icon = 'bi-file-earmark-word';
+                    } elseif (in_array($ext, ['xls', 'xlsx'])) {
+                        $icon = 'bi-file-earmark-excel';
+                    } elseif (in_array($ext, ['zip', 'rar', '7z'])) {
+                        $icon = 'bi-file-earmark-zip';
+                    } elseif (in_array($ext, ['txt'])) {
+                        $icon = 'bi-file-earmark-text';
+                    }
+                    ?>
+                    <div class="file-item">
+                        <div class="file-info">
+                            <i class="bi <?php echo $icon; ?> file-icon"></i>
+                            <span class="file-name"><?php echo safeEcho($file['original_name']); ?></span>
+                        </div>
+                        <div class="file-actions">
+                            <a href="<?php echo isset($file['file_path']) ? str_replace('../../', '/', $file['file_path']) : '#'; ?>"
+                               download class="file-download-btn"
+                               title="Завантажити файл">
+                                <i class="bi bi-download"></i>
+                            </a>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
         <?php else: ?>
-        <!-- Список замовлень -->
-        <h2 class="section-title mb-4">
-            <i class="bi bi-list-check text-primary"></i> Список замовлень
-        </h2>
-
-        <!-- Статистика замовлень -->
-        <div class="stats-grid">
-            <div class="stat-card" onclick="window.location.href='?section=orders&status=new'">
-                <div class="stat-icon stat-icon-3">
-                    <i class="bi bi-hourglass"></i>
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="bi bi-file-earmark-x"></i>
                 </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?= $stats['new'] ?></div>
-                    <div class="stat-label">Нові</div>
+                <div class="empty-state-text">Файли не прикріплені до цього замовлення</div>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Коментарі -->
+    <div class="comments-section">
+    <div class="comments-header">
+        <div class="comments-title">
+            <i class="bi bi-chat-left-text text-primary"></i>
+            Коментарі
+            <?php if (!empty($orderComments)): ?>
+                <span class="comments-count"><?= $totalComments ?? count($orderComments) ?></span>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <?php if (!empty($orderComments)): ?>
+        <div class="comments-list">
+        <?php foreach ($orderComments as $comment):
+            $isAdminComment = in_array($comment['role'], ['admin', 'junior_admin']);
+            $isOwnComment = isset($_SESSION['user_id']) && $comment['user_id'] == $_SESSION['user_id'];
+            ?>
+            <div class="comment-item <?= $isOwnComment ? 'own-comment' : '' ?> <?= $isAdminComment ? 'admin-comment' : '' ?>">
+                <div class="comment-header">
+                    <div class="comment-user">
+                        <div class="comment-avatar">
+                            <?php echo strtoupper(substr($comment['username'] ?? 'U', 0, 1)); ?>
+                        </div>
+                        <div class="comment-user-info">
+                            <div class="comment-username">
+                                <?php echo safeEcho($comment['username']); ?>
+                                <?php if ($isAdminComment): ?>
+                                    <span class="admin-badge"><?= $comment['role'] === 'admin' ? 'Адмін' : 'Мол. Адмін' ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <div class="comment-time"><?php echo formatDate($comment['created_at']); ?></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="comment-content">
+                    <?php echo nl2br(safeEcho($comment['content'])); ?>
                 </div>
             </div>
+        <?php endforeach; ?>
+        </div>
 
-            <div class="stat-card" onclick="window.location.href='?section=orders&status=in_progress'">
-                <div class="stat-icon">
-                    <i class="bi bi-gear"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?= $stats['in_progress'] ?></div>
-                    <div class="stat-label">В роботі</div>
-                </div>
+        <?php if (isset($totalCommentPages) && $totalCommentPages > 1): ?>
+            <div class="pagination mt-4">
+                <?php for ($i = 1; $i <= $totalCommentPages; $i++): ?>
+                    <a href="?section=orders&id=<?= $orderDetails['id'] ?>&comment_page=<?= $i ?>"
+                       class="pagination-link <?= $i == ($commentPage ?? 1) ? 'active' : '' ?>">
+                        <?= $i ?>
+                    </a>
+                <?php endfor; ?>
             </div>
-
-            <div class="stat-card" onclick="window.location.href='?section=orders&status=waiting'">
-                <div class="stat-icon stat-icon-1">
-                    <i class="bi bi-clock"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?= $stats['waiting'] ?></div>
-                    <div class="stat-label">Очікується</div>
-                </div>
+        <?php endif; ?>
+    <?php else: ?>
+        <div class="empty-state">
+            <div class="empty-state-icon">
+                <i class="bi bi-chat-left"></i>
             </div>
+            <div class="empty-state-text">Поки що немає коментарів</div>
+        </div>
+    <?php endif; ?>
 
-            <div class="stat-card" onclick="window.location.href='?section=orders&status=waiting_delivery'">
-                <div class="stat-icon stat-icon-4">
-                    <i class="bi bi-truck"></i>
+        <?php if (canAddComments($orderDetails['status'])): ?>
+            <div class="comment-form">
+                <div class="comment-form-header">
+                    <i class="bi bi-plus-circle text-primary"></i> Додати новий коментар
                 </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?= $stats['waiting_delivery'] ?? 0 ?></div>
-                    <div class="stat-label">Очікується поставки</div>
-                </div>
+                <form method="post" action="admin_dashboard.php">
+                    <input type="hidden" name="order_id" value="<?php echo $orderDetails['id']; ?>">
+                    <textarea name="comment" placeholder="Напишіть ваш коментар тут..." required></textarea>
+                    <button type="submit" name="add_comment" class="btn btn-primary btn-with-icon">
+                        <i class="bi bi-send"></i> Відправити коментар
+                    </button>
+                </form>
             </div>
-
-            <div class="stat-card" onclick="window.location.href='?section=orders&status=completed'">
-                <div class="stat-icon stat-icon-2">
-                    <i class="bi bi-check-circle"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?= $stats['completed'] ?></div>
-                    <div class="stat-label">Завершено</div>
-                </div>
+        <?php else: ?>
+            <div class="status-locked-message mt-4">
+                <i class="bi bi-lock-fill lock-icon-animated"></i>
+                <span>Додавання коментарів недоступне для замовлень зі статусом "<?php echo $orderDetails['status']; ?>"</span>
             </div>
+        <?php endif; ?>
+    </div>
 
-            <div class="stat-card" onclick="window.location.href='?section=orders&status=canceled'">
-                <div class="stat-icon stat-icon-5">
-                    <i class="bi bi-x-circle"></i>
-                </div>
-                <div class="stat-content">
-                    <div class="stat-number"><?= $stats['canceled'] ?></div>
-                    <div class="stat-label">Не можливо виконати</div>
-                </div>
+<?php else: ?>
+    <!-- Список замовлень -->
+    <h2 class="section-title mb-4">
+        <i class="bi bi-list-check text-primary"></i> Список замовлень
+    </h2>
+
+    <!-- Статистика замовлень -->
+    <div class="stats-grid">
+        <div class="stat-card" onclick="window.location.href='?section=orders&status=new'">
+            <div class="stat-icon stat-icon-3">
+                <i class="bi bi-hourglass"></i>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number"><?= $stats['new'] ?></div>
+                <div class="stat-label">Нові</div>
             </div>
         </div>
 
-        <!-- Фільтри замовлень -->
-        <form method="get" action="admin_dashboard.php" class="filters">
-            <input type="hidden" name="section" value="orders">
-
-            <div class="filter-group">
-                <label for="status-filter">Статус замовлення</label>
-                <select id="status-filter" name="status" class="form-control" onchange="this.form.submit()">
-                    <option value="all" <?= !isset($statusFilter) || $statusFilter === 'all' ? 'selected' : '' ?>>Всі статуси</option>
-                    <option value="new" <?= isset($statusFilter) && $statusFilter === 'new' ? 'selected' : '' ?>>Нові</option>
-                    <option value="in_progress" <?= isset($statusFilter) && $statusFilter === 'in_progress' ? 'selected' : '' ?>>В роботі</option>
-                    <option value="waiting" <?= isset($statusFilter) && $statusFilter === 'waiting' ? 'selected' : '' ?>>Очікується</option>
-                    <option value="waiting_delivery" <?= isset($statusFilter) && $statusFilter === 'waiting_delivery' ? 'selected' : '' ?>>Очікується поставки товару</option>
-                    <option value="completed" <?= isset($statusFilter) && $statusFilter === 'completed' ? 'selected' : '' ?>>Завершено</option>
-                    <option value="canceled" <?= isset($statusFilter) && $statusFilter === 'canceled' ? 'selected' : '' ?>>Не можливо виконати</option>
-                </select>
+        <div class="stat-card" onclick="window.location.href='?section=orders&status=in_progress'">
+            <div class="stat-icon">
+                <i class="bi bi-gear"></i>
             </div>
-
-            <div class="filter-group">
-                <label for="sort-by">Сортування</label>
-                <select id="sort-by" name="sort" class="form-control" onchange="this.form.submit()">
-                    <option value="newest" <?= !isset($sortOrder) || $sortOrder === 'newest' ? 'selected' : '' ?>>Спочатку нові</option>
-                    <option value="oldest" <?= isset($sortOrder) && $sortOrder === 'oldest' ? 'selected' : '' ?>>Спочатку старі</option>
-                </select>
+            <div class="stat-content">
+                <div class="stat-number"><?= $stats['in_progress'] ?></div>
+                <div class="stat-label">В роботі</div>
             </div>
+        </div>
 
-            <div class="search-group">
-                <label for="search-input">Пошук</label>
-                <div class="d-flex w-100">
-                    <div class="position-relative w-100">
-                        <i class="bi bi-search search-icon"></i>
-                        <input type="text" id="search-input" class="search-input" name="search"
-                               placeholder="Пошук за номером, послугою або клієнтом..."
-                               value="<?= isset($searchTerm) ? htmlspecialchars($searchTerm) : '' ?>">
-                    </div>
-                    <button type="submit" class="btn btn-primary ml-2">
-                        <i class="bi bi-search"></i>
-                    </button>
+        <div class="stat-card" onclick="window.location.href='?section=orders&status=waiting'">
+            <div class="stat-icon stat-icon-1">
+                <i class="bi bi-clock"></i>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number"><?= $stats['waiting'] ?></div>
+                <div class="stat-label">Очікується</div>
+            </div>
+        </div>
+
+        <div class="stat-card" onclick="window.location.href='?section=orders&status=waiting_delivery'">
+            <div class="stat-icon stat-icon-4">
+                <i class="bi bi-truck"></i>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number"><?= $stats['waiting_delivery'] ?? 0 ?></div>
+                <div class="stat-label">Очікується поставки</div>
+            </div>
+        </div>
+
+        <div class="stat-card" onclick="window.location.href='?section=orders&status=completed'">
+            <div class="stat-icon stat-icon-2">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number"><?= $stats['completed'] ?></div>
+                <div class="stat-label">Завершено</div>
+            </div>
+        </div>
+
+        <div class="stat-card" onclick="window.location.href='?section=orders&status=canceled'">
+            <div class="stat-icon stat-icon-5">
+                <i class="bi bi-x-circle"></i>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number"><?= $stats['canceled'] ?></div>
+                <div class="stat-label">Не можливо виконати</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Фільтри замовлень -->
+    <form method="get" action="admin_dashboard.php" class="filters">
+        <input type="hidden" name="section" value="orders">
+
+        <div class="filter-group">
+            <label for="status-filter">Статус замовлення</label>
+            <select id="status-filter" name="status" class="form-control" onchange="this.form.submit()">
+                <option value="all" <?= !isset($statusFilter) || $statusFilter === 'all' ? 'selected' : '' ?>>Всі статуси</option>
+                <option value="new" <?= isset($statusFilter) && $statusFilter === 'new' ? 'selected' : '' ?>>Нові</option>
+                <option value="in_progress" <?= isset($statusFilter) && $statusFilter === 'in_progress' ? 'selected' : '' ?>>В роботі</option>
+                <option value="waiting" <?= isset($statusFilter) && $statusFilter === 'waiting' ? 'selected' : '' ?>>Очікується</option>
+                <option value="waiting_delivery" <?= isset($statusFilter) && $statusFilter === 'waiting_delivery' ? 'selected' : '' ?>>Очікується поставки товару</option>
+                <option value="completed" <?= isset($statusFilter) && $statusFilter === 'completed' ? 'selected' : '' ?>>Завершено</option>
+                <option value="canceled" <?= isset($statusFilter) && $statusFilter === 'canceled' ? 'selected' : '' ?>>Не можливо виконати</option>
+            </select>
+        </div>
+
+        <!-- Додано фільтр за призначенням -->
+        <div class="filter-group">
+            <label for="assigned-filter">Призначення</label>
+            <select id="assigned-filter" name="assigned" class="form-control" onchange="this.form.submit()">
+                <option value="all" <?= !isset($assignedFilter) || $assignedFilter === 'all' ? 'selected' : '' ?>>Всі замовлення</option>
+                <option value="assigned_to_me" <?= isset($assignedFilter) && $assignedFilter === 'assigned_to_me' ? 'selected' : '' ?>>Мої замовлення</option>
+                <option value="unassigned" <?= isset($assignedFilter) && $assignedFilter === 'unassigned' ? 'selected' : '' ?>>Непризначені</option>
+                <option value="assigned_others" <?= isset($assignedFilter) && $assignedFilter === 'assigned_others' ? 'selected' : '' ?>>Призначені іншим</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label for="sort-by">Сортування</label>
+            <select id="sort-by" name="sort" class="form-control" onchange="this.form.submit()">
+                <option value="newest" <?= !isset($sortOrder) || $sortOrder === 'newest' ? 'selected' : '' ?>>Спочатку нові</option>
+                <option value="oldest" <?= isset($sortOrder) && $sortOrder === 'oldest' ? 'selected' : '' ?>>Спочатку старі</option>
+            </select>
+        </div>
+
+        <div class="search-group">
+            <label for="search-input">Пошук</label>
+            <div class="d-flex w-100">
+                <div class="position-relative w-100">
+                    <i class="bi bi-search search-icon"></i>
+                    <input type="text" id="search-input" class="search-input" name="search"
+                           placeholder="Пошук за номером, послугою або клієнтом..."
+                           value="<?= isset($searchTerm) ? htmlspecialchars($searchTerm) : '' ?>">
                 </div>
+                <button type="submit" class="btn btn-primary ml-2">
+                    <i class="bi bi-search"></i>
+                </button>
             </div>
+        </div>
 
-                <?php if ((isset($statusFilter) && $statusFilter !== 'all') || (isset($searchTerm) && !empty($searchTerm))): ?>
-                    <div class="filter-actions">
-                        <a href="?section=orders" class="btn btn-sm btn-with-icon">
-                            <i class="bi bi-x-circle"></i> Очистити фільтри
-                        </a>
+        <?php if ((isset($statusFilter) && $statusFilter !== 'all') ||
+            (isset($searchTerm) && !empty($searchTerm)) ||
+            (isset($assignedFilter) && $assignedFilter !== 'all')): ?>
+            <div class="filter-actions">
+                <a href="?section=orders" class="btn btn-sm btn-with-icon">
+                    <i class="bi bi-x-circle"></i> Очистити фільтри
+                </a>
+            </div>
+        <?php endif; ?>
+    </form>
+
+    <!-- Список замовлень -->
+    <?php if (!empty($orders)): ?>
+        <div class="orders-grid mt-4">
+            <?php foreach ($orders as $order):
+                $orderIsDisabled = ($order['status'] === 'Завершено' || $order['status'] === 'Виконано' || $order['status'] === 'Не можливо виконати');
+                $isAssignedToMe = isset($order['handler_id']) && $order['handler_id'] == $_SESSION['user_id'];
+                $isAssignedToOther = isset($order['handler_id']) && !empty($order['handler_id']) && $order['handler_id'] != $_SESSION['user_id'];
+                $canChangeStatus = $_SESSION['role'] === 'admin' || !$orderIsDisabled;
+                ?>
+                <div class="order-card fade-in <?= $isAssignedToMe ? 'border-primary' : '' ?> <?= $orderIsDisabled ? 'order-completed' : '' ?>">
+                    <div class="order-card-header">
+                        <div class="order-service"><?= safeEcho($order['service']) ?></div>
+                        <div class="badge <?= getStatusClass($order['status']) ?>">
+                            <?= safeEcho($order['status']) ?>
+                        </div>
                     </div>
-                <?php endif; ?>
-            </form>
 
-            <!-- Список замовлень -->
-            <?php if (!empty($orders)): ?>
-                <div class="orders-grid mt-4">
-                    <?php foreach ($orders as $order):
-                        $orderIsDisabled = ($order['status'] === 'Завершено' || $order['status'] === 'Виконано' || $order['status'] === 'Не можливо виконати');
-                        $isAssignedToMe = isset($order['handler_id']) && $order['handler_id'] == $_SESSION['user_id'];
-                        $isAssignedToOther = isset($order['handler_id']) && !empty($order['handler_id']) && $order['handler_id'] != $_SESSION['user_id'];
-                        $canChangeStatus = $_SESSION['role'] === 'admin' || !$orderIsDisabled;
-                        ?>
-                        <div class="order-card fade-in <?= $isAssignedToMe ? 'border-primary' : '' ?> <?= $orderIsDisabled ? 'order-completed' : '' ?>">
-                            <div class="order-card-header">
-                                <div class="order-service"><?= safeEcho($order['service']) ?></div>
-                                <div class="badge <?= getStatusClass($order['status']) ?>">
-                                    <?= safeEcho($order['status']) ?>
-                                </div>
-                            </div>
-
-                            <div class="order-card-content">
-                                <div class="order-number">
-                                    Замовлення #<?= $order['id'] ?>
-                                    <?php if ($isAssignedToMe): ?>
-                                        <span class="badge bg-primary ml-2" title="Призначено вам">
+                    <div class="order-card-content">
+                        <div class="order-number">
+                            Замовлення #<?= $order['id'] ?>
+                            <?php if ($isAssignedToMe): ?>
+                                <span class="badge bg-primary ml-2" title="Призначено вам">
                                             <i class="bi bi-person-check-fill"></i>
                                         </span>
-                                    <?php elseif ($isAssignedToOther): ?>
-                                        <span class="badge bg-secondary ml-2" title="Призначено: <?= safeEcho($order['handler_name']) ?>">
+                            <?php elseif ($isAssignedToOther): ?>
+                                <span class="badge bg-secondary ml-2" title="Призначено: <?= safeEcho($order['handler_name']) ?>">
                                             <i class="bi bi-person-fill"></i>
                                         </span>
-                                    <?php endif; ?>
-                                </div>
-
-                                <ul class="order-info-list">
-                                    <li class="order-info-item">
-                                        <div class="order-info-label">Клієнт:</div>
-                                        <div class="order-info-value"><?= safeEcho($order['username']) ?></div>
-                                    </li>
-                                    <li class="order-info-item">
-                                        <div class="order-info-label">Створено:</div>
-                                        <div class="order-info-value"><?= formatDate($order['created_at']) ?></div>
-                                    </li>
-                                    <li class="order-info-item">
-                                        <div class="order-info-label">Категорія:</div>
-                                        <div class="order-info-value"><?= safeEcho($order['category_name'] ?? 'Не вказано') ?></div>
-                                    </li>
-                                    <?php if ($isAssignedToOther): ?>
-                                        <li class="order-info-item">
-                                            <div class="order-info-label">Відповідальний:</div>
-                                            <div class="order-info-value text-primary"><?= safeEcho($order['handler_name']) ?></div>
-                                        </li>
-                                    <?php endif; ?>
-                                </ul>
-
-                                <!-- Коментарі до замовлення -->
-                                <?php if (!empty($comments[$order['id']]['data'])): ?>
-                                    <div class="mt-3">
-                                        <div class="d-flex align-items-center mb-2">
-                                            <i class="bi bi-chat-left-text text-primary mr-2"></i>
-                                            <strong>Останні коментарі</strong>
-                                            <span class="comments-count ml-2"><?= $comments[$order['id']]['total_comments'] ?></span>
-                                        </div>
-                                        <div class="card">
-                                            <div class="card-body p-2">
-                                                <?php foreach (array_slice($comments[$order['id']]['data'], 0, 2) as $comment): ?>
-                                                    <div class="d-flex mb-2">
-                                                        <div class="mr-2 text-primary"><?= safeEcho($comment['username']) ?>:</div>
-                                                        <div class="text-truncate"><?= safeEcho(substr($comment['content'], 0, 70)) ?><?= strlen($comment['content']) > 70 ? '...' : '' ?></div>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                                <?php if ($comments[$order['id']]['total_comments'] > 2): ?>
-                                                    <div class="text-primary text-center">+ ще <?= $comments[$order['id']]['total_comments'] - 2 ?> коментарів</div>
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="empty-comments">
-                                        <i class="bi bi-chat-left text-secondary"></i>
-                                        <span class="text-secondary">Немає коментарів</span>
-                                    </div>
-                                <?php endif; ?>
-
-                                <!-- Файли замовлення (показуємо кількість) -->
-                                <?php if (!empty($orderFiles[$order['id']])): ?>
-                                    <div class="d-flex align-items-center mt-3">
-                                        <i class="bi bi-paperclip text-primary mr-2"></i>
-                                        <span>Прикріплених файлів: <strong><?= count($orderFiles[$order['id']]) ?></strong></span>
-                                    </div>
-                                <?php endif; ?>
-
-                                <?php if (!$orderIsDisabled || $_SESSION['role'] === 'admin'): ?>
-                                    <form method="POST" action="update_status.php" class="mt-3">
-                                        <input type="hidden" name="order_id" value="<?= $order['id'] ?>">
-                                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
-
-                                        <div class="d-flex gap-2">
-                                            <select name="status" class="form-control" <?= $canChangeStatus ? '' : 'disabled' ?>>
-                                                <option value="Новий" <?= $order['status'] === 'Новий' ? 'selected' : '' ?>>Новий</option>
-                                                <option value="В роботі" <?= $order['status'] === 'В роботі' ? 'selected' : '' ?>>В роботі</option>
-                                                <option value="Очікується" <?= $order['status'] === 'Очікується' ? 'selected' : '' ?>>Очікується</option>
-                                                <option value="Очікується поставки товару" <?= $order['status'] === 'Очікується поставки товару' ? 'selected' : '' ?>>Очікується поставки</option>
-                                                <option value="Завершено" <?= $order['status'] === 'Завершено' ? 'selected' : '' ?>>Завершено</option>
-                                                <option value="Не можливо виконати" <?= $order['status'] === 'Не можливо виконати' ? 'selected' : '' ?>>Не можливо виконати</option>
-                                            </select>
-                                            <button type="submit" class="btn btn-primary" <?= $canChangeStatus ? '' : 'disabled' ?>>
-                                                <i class="bi bi-check-lg"></i>
-                                            </button>
-                                        </div>
-                                    </form>
-                                <?php elseif (!$canChangeStatus): ?>
-                                    <div class="status-locked-message mt-3">
-                                        <i class="bi bi-lock-fill"></i>
-                                        <span>Ви не можете змінювати статус цього замовлення</span>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-
-                            <div class="order-card-footer">
-                                <div class="order-date">
-                                    <i class="bi bi-calendar3 mr-1"></i>
-                                    <?= formatDate($order['created_at']) ?>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <?php if (empty($order['handler_id']) && !$orderIsDisabled): ?>
-                                        <button type="button" class="btn btn-warning btn-sm btn-with-icon btn-assign" onclick="assignToMe(<?= $order['id'] ?>)">
-                                            <i class="bi bi-person-fill-add"></i> Взяти
-                                        </button>
-                                    <?php elseif ($isAssignedToMe): ?>
-                                        <button type="button" class="btn btn-success btn-sm btn-with-icon" disabled>
-                                            <i class="bi bi-person-check"></i> Ваше
-                                        </button>
-                                    <?php endif; ?>
-                                    <a href="?section=orders&id=<?= $order['id'] ?>" class="btn btn-primary btn-sm btn-with-icon">
-                                        <i class="bi bi-eye"></i> Деталі
-                                    </a>
-                                </div>
-                            </div>
+                            <?php endif; ?>
                         </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php else: ?>
-                <div class="empty-state mt-4">
-                    <div class="empty-state-icon">
-                        <i class="bi bi-clipboard-x"></i>
+
+                        <ul class="order-info-list">
+                            <li class="order-info-item">
+                                <div class="order-info-label">Клієнт:</div>
+                                <div class="order-info-value"><?= safeEcho($order['username']) ?></div>
+                            </li>
+                            <li class="order-info-item">
+                                <div class="order-info-label">Створено:</div>
+                                <div class="order-info-value"><?= formatDate($order['created_at']) ?></div>
+                            </li>
+                            <li class="order-info-item">
+                                <div class="order-info-label">Категорія:</div>
+                                <div class="order-info-value"><?= safeEcho($order['category_name'] ?? 'Не вказано') ?></div>
+                            </li>
+                            <?php if ($isAssignedToOther): ?>
+                                <li class="order-info-item">
+                                    <div class="order-info-label">Відповідальний:</div>
+                                    <div class="order-info-value text-primary"><?= safeEcho($order['handler_name']) ?></div>
+                                </li>
+                            <?php endif; ?>
+                        </ul>
+
+                        <!-- Коментарі до замовлення (показуємо останні 3) -->
+                        <?php if (!empty($comments[$order['id']]['data'])): ?>
+                            <div class="mt-3">
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="bi bi-chat-left-text text-primary mr-2"></i>
+                                    <strong>Останні коментарі</strong>
+                                    <span class="comments-count ml-2"><?= $comments[$order['id']]['total_comments'] ?></span>
+                                </div>
+                                <div class="card">
+                                    <div class="card-body p-2">
+                                        <?php
+                                        // Показуємо останні 3 коментарі
+                                        $lastComments = array_slice($comments[$order['id']]['data'], 0, 3);
+                                        foreach ($lastComments as $comment):
+                                            ?>
+                                            <div class="d-flex mb-2">
+                                                <div class="mr-2 text-primary"><?= safeEcho($comment['username']) ?>:</div>
+                                                <div class="text-truncate"><?= safeEcho(substr($comment['content'], 0, 70)) ?><?= strlen($comment['content']) > 70 ? '...' : '' ?></div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                        <?php if ($comments[$order['id']]['total_comments'] > 3): ?>
+                                            <div class="text-primary text-center">+ ще <?= $comments[$order['id']]['total_comments'] - 3 ?> коментарів</div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <div class="empty-comments">
+                                <i class="bi bi-chat-left text-secondary"></i>
+                                <span class="text-secondary">Немає коментарів</span>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Файли замовлення (показуємо кількість) -->
+                        <?php if (!empty($orderFiles[$order['id']])): ?>
+                            <div class="d-flex align-items-center mt-3">
+                                <i class="bi bi-paperclip text-primary mr-2"></i>
+                                <span>Прикріплених файлів: <strong><?= count($orderFiles[$order['id']]) ?></strong></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!$orderIsDisabled || $_SESSION['role'] === 'admin'): ?>
+                            <form method="POST" action="update_status.php" class="mt-3">
+                                <input type="hidden" name="order_id" value="<?= $order['id'] ?>">
+                                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
+                                <div class="d-flex gap-2">
+                                    <select name="status" class="form-control" <?= $canChangeStatus ? '' : 'disabled' ?>>
+                                        <option value="Новий" <?= $order['status'] === 'Новий' ? 'selected' : '' ?>>Новий</option>
+                                        <option value="В роботі" <?= $order['status'] === 'В роботі' ? 'selected' : '' ?>>В роботі</option>
+                                        <option value="Очікується" <?= $order['status'] === 'Очікується' ? 'selected' : '' ?>>Очікується</option>
+                                        <option value="Очікується поставки товару" <?= $order['status'] === 'Очікується поставки товару' ? 'selected' : '' ?>>Очікується поставки товару</option>
+                                        <option value="Завершено" <?= $order['status'] === 'Завершено' ? 'selected' : '' ?>>Завершено</option>
+                                        <option value="Не можливо виконати" <?= $order['status'] === 'Не можливо виконати' ? 'selected' : '' ?>>Не можливо виконати</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-primary" <?= $canChangeStatus ? '' : 'disabled' ?>>
+                                        <i class="bi bi-check-lg"></i>
+                                    </button>
+                                </div>
+                            </form>
+                        <?php elseif (!$canChangeStatus): ?>
+                            <div class="status-locked-message mt-3">
+                                <i class="bi bi-lock-fill"></i>
+                                <span>Ви не можете змінювати статус цього замовлення</span>
+                            </div>
+                        <?php endif; ?>
                     </div>
-                    <div class="empty-state-text">Замовлень немає або вони не відповідають вибраним фільтрам</div>
-                    <?php if ((isset($statusFilter) && $statusFilter !== 'all') || (isset($searchTerm) && !empty($searchTerm))): ?>
-                        <a href="?section=orders" class="btn btn-primary btn-with-icon">
-                            <i class="bi bi-arrow-repeat"></i> Показати всі замовлення
-                        </a>
-                    <?php endif; ?>
+
+                    <div class="order-card-footer">
+                        <div class="order-date">
+                            <i class="bi bi-calendar3 mr-1"></i>
+                            <?= formatDate($order['created_at']) ?>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <?php if (empty($order['handler_id']) && !$orderIsDisabled): ?>
+                                <button type="button" class="btn btn-warning btn-sm btn-with-icon btn-assign" onclick="assignToMe(<?= $order['id'] ?>)">
+                                    <i class="bi bi-person-fill-add"></i> Взяти
+                                </button>
+                            <?php elseif ($isAssignedToMe): ?>
+                                <button type="button" class="btn btn-success btn-sm btn-with-icon" disabled>
+                                    <i class="bi bi-person-check"></i> Ваше
+                                </button>
+                            <?php endif; ?>
+                            <a href="?section=orders&id=<?= $order['id'] ?>" class="btn btn-primary btn-sm btn-with-icon">
+                                <i class="bi bi-eye"></i> Деталі
+                            </a>
+                        </div>
+                    </div>
                 </div>
+            <?php endforeach; ?>
+        </div>
+    <?php else: ?>
+        <div class="empty-state mt-4">
+            <div class="empty-state-icon">
+                <i class="bi bi-clipboard-x"></i>
+            </div>
+            <div class="empty-state-text">Замовлень немає або вони не відповідають вибраним фільтрам</div>
+            <?php if ((isset($statusFilter) && $statusFilter !== 'all') ||
+                (isset($searchTerm) && !empty($searchTerm)) ||
+                (isset($assignedFilter) && $assignedFilter !== 'all')): ?>
+                <a href="?section=orders" class="btn btn-primary btn-with-icon">
+                    <i class="bi bi-arrow-repeat"></i> Показати всі замовлення
+                </a>
             <?php endif; ?>
-        <?php endif; ?>
-    </section>
+        </div>
+    <?php endif; ?>
+<?php endif; ?>
+</section>
 
     <!-- Секція статистики -->
     <section id="stats" class="fade-in" style="display: <?= $activeSection === 'stats' ? 'block' : 'none' ?>;">
@@ -3610,6 +3766,19 @@ if (isset($_GET['id'])) {
                                     <div>Завершено: <strong><?= $admin['completed_orders'] ?? 0 ?></strong></div>
                                     <div><?= round($completionRate) ?>%</div>
                                 </div>
+
+                                <!-- Додані показники швидкості виконання -->
+                                <div class="d-flex justify-content-between mt-3 text-secondary">
+                                    <div>
+                                        <small>Мін. час: <strong><?= isset($admin['min_completion_time']) ? round($admin['min_completion_time']) : 0 ?> год.</strong></small>
+                                    </div>
+                                    <div>
+                                        <small>Сер. час: <strong><?= isset($admin['avg_completion_time']) ? round($admin['avg_completion_time']) : 0 ?> год.</strong></small>
+                                    </div>
+                                    <div>
+                                        <small>Макс. час: <strong><?= isset($admin['max_completion_time']) ? round($admin['max_completion_time']) : 0 ?> год.</strong></small>
+                                    </div>
+                                </div>
                             </div>
                             <div class="admin-stat-footer">
                                 <div class="admin-stat-indicator <?= $admin['avg_completion_time'] < 48 ? 'positive' : 'negative' ?>">
@@ -3632,6 +3801,18 @@ if (isset($_GET['id'])) {
                     <div class="card-body">
                         <div class="chart-container">
                             <div id="adminComparisonChart"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Додана карта часу виконання -->
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h3 class="card-title">Порівняння часу виконання замовлень</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <div id="adminTimeComparisonChart"></div>
                         </div>
                     </div>
                 </div>
@@ -3681,6 +3862,52 @@ if (isset($_GET['id'])) {
                         </div>
                     </div>
 
+                    <!-- Додана статистика за швидкістю -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h3 class="card-title">Швидкість виконання</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-icon stat-icon-2">
+                                        <i class="bi bi-lightning"></i>
+                                    </div>
+                                    <div class="stat-content">
+                                        <div class="stat-number">
+                                            <?= isset($selectedAdminStats['min_completion_time']) ? round($selectedAdminStats['min_completion_time']) : 0 ?>
+                                        </div>
+                                        <div class="stat-label">Найшвидше виконання (год)</div>
+                                    </div>
+                                </div>
+
+                                <div class="stat-card">
+                                    <div class="stat-icon stat-icon-3">
+                                        <i class="bi bi-clock"></i>
+                                    </div>
+                                    <div class="stat-content">
+                                        <div class="stat-number">
+                                            <?= isset($selectedAdminStats['avg_completion_time']) ? round($selectedAdminStats['avg_completion_time']) : 0 ?>
+                                        </div>
+                                        <div class="stat-label">Середній час (год)</div>
+                                    </div>
+                                </div>
+
+                                <div class="stat-card">
+                                    <div class="stat-icon stat-icon-4">
+                                        <i class="bi bi-hourglass"></i>
+                                    </div>
+                                    <div class="stat-content">
+                                        <div class="stat-number">
+                                            <?= isset($selectedAdminStats['max_completion_time']) ? round($selectedAdminStats['max_completion_time']) : 0 ?>
+                                        </div>
+                                        <div class="stat-label">Найдовше виконання (год)</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Графік активності за період -->
                     <div class="card mb-4">
                         <div class="card-header">
@@ -3722,6 +3949,237 @@ if (isset($_GET['id'])) {
         </section>
     <?php endif; ?>
 
+    <!-- Секція особистої статистики для молодших адміністраторів -->
+    <?php if ($_SESSION['role'] === 'junior_admin'): ?>
+        <section id="my_stats" class="fade-in" style="display: <?= $activeSection === 'my_stats' ? 'block' : 'none' ?>;">
+            <h2 class="section-title mb-4">
+                <i class="bi bi-person-badge text-primary"></i> Мої метрики
+            </h2>
+
+            <!-- Фільтри для особистої статистики -->
+            <form method="get" action="admin_dashboard.php" class="filters">
+                <input type="hidden" name="section" value="my_stats">
+                <input type="hidden" name="stats_user" value="<?= $_SESSION['user_id'] ?>">
+
+                <div class="filter-group">
+                    <label for="my-stats-date-range">Період</label>
+                    <select id="my-stats-date-range" name="stats_date_range" class="form-control" onchange="this.form.submit()">
+                        <option value="today" <?= $statsDateRange === 'today' ? 'selected' : '' ?>>Сьогодні</option>
+                        <option value="7days" <?= $statsDateRange === '7days' ? 'selected' : '' ?>>Останні 7 днів</option>
+                        <option value="30days" <?= $statsDateRange === '30days' ? 'selected' : '' ?>>Останні 30 днів</option>
+                        <option value="90days" <?= $statsDateRange === '90days' ? 'selected' : '' ?>>Останні 90 днів</option>
+                        <option value="year" <?= $statsDateRange === 'year' ? 'selected' : '' ?>>Останній рік</option>
+                    </select>
+                </div>
+            </form>
+
+            <?php
+            // Отримуємо статистику для поточного молодшого адміна
+            $myStatsQuery = "
+                SELECT 
+                    u.id, 
+                    u.username, 
+                    u.role,
+                    COUNT(DISTINCT o.id) as total_orders,
+                    SUM(CASE WHEN o.status IN ('Завершено', 'Виконано') THEN 1 ELSE 0 END) as completed_orders,
+                    SUM(CASE WHEN o.status IN ('Не можливо виконати', 'Скасовано') THEN 1 ELSE 0 END) as canceled_orders,
+                    SUM(CASE WHEN o.status = 'В роботі' THEN 1 ELSE 0 END) as in_progress_orders,
+                    AVG(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
+                        WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
+                        ELSE NOW() 
+                    END)) as avg_completion_time,
+                    MIN(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
+                        WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
+                        ELSE NOW() 
+                    END)) as min_completion_time,
+                    MAX(TIMESTAMPDIFF(HOUR, o.created_at, CASE 
+                        WHEN o.status IN ('Завершено', 'Виконано') THEN o.updated_at 
+                        ELSE NOW() 
+                    END)) as max_completion_time
+                FROM users u
+                LEFT JOIN orders o ON u.id = o.handler_id
+                WHERE u.id = ? AND o.created_at >= ?
+                GROUP BY u.id
+            ";
+
+            $myStatsStmt = $conn->prepare($myStatsQuery);
+            $myStatsStmt->bind_param("is", $_SESSION['user_id'], $statsFromDate);
+            $myStatsStmt->execute();
+            $myStatsResult = $myStatsStmt->get_result();
+            $myStats = $myStatsResult->fetch_assoc();
+
+            // Отримуємо щоденну статистику
+            $myDailyStatsQuery = "
+                SELECT 
+                    DATE(o.created_at) as date,
+                    COUNT(o.id) as count,
+                    SUM(CASE WHEN o.status IN ('Завершено', 'Виконано') THEN 1 ELSE 0 END) as completed
+                FROM orders o
+                WHERE o.handler_id = ? AND o.created_at >= ?
+                GROUP BY DATE(o.created_at)
+                ORDER BY date
+            ";
+
+            $myDailyStatsStmt = $conn->prepare($myDailyStatsQuery);
+            $myDailyStatsStmt->bind_param("is", $_SESSION['user_id'], $statsFromDate);
+            $myDailyStatsStmt->execute();
+            $myDailyStatsResult = $myDailyStatsStmt->get_result();
+
+            $myDailyStats = [];
+            $myDailyLabels = [];
+            $myDailyValues = [];
+            $myDailyCompleted = [];
+
+            while ($row = $myDailyStatsResult->fetch_assoc()) {
+                $myDailyStats[] = $row;
+                $myDailyLabels[] = date('d.m', strtotime($row['date']));
+                $myDailyValues[] = (int)$row['count'];
+                $myDailyCompleted[] = (int)$row['completed'];
+            }
+
+            // Отримуємо статистику за категоріями
+            $myCategoryStatsQuery = "
+                SELECT 
+                    COALESCE(c.name, 'Без категорії') as category,
+                    COUNT(o.id) as count
+                FROM orders o
+                LEFT JOIN service_categories c ON o.category_id = c.id
+                WHERE o.handler_id = ? AND o.created_at >= ?
+                GROUP BY category
+                ORDER BY count DESC
+            ";
+
+            $myCategoryStatsStmt = $conn->prepare($myCategoryStatsQuery);
+            $myCategoryStatsStmt->bind_param("is", $_SESSION['user_id'], $statsFromDate);
+            $myCategoryStatsStmt->execute();
+            $myCategoryStatsResult = $myCategoryStatsStmt->get_result();
+            $myCategoryStats = $myCategoryStatsResult->fetch_all(MYSQLI_ASSOC);
+            ?>
+
+            <?php if ($myStats): ?>
+                <div class="admin-profile mb-4">
+                    <div class="admin-profile-header">
+                        <div class="admin-profile-avatar">
+                            <?= strtoupper(substr($_SESSION['username'], 0, 1)) ?>
+                        </div>
+                        <div class="admin-profile-info">
+                            <div class="admin-profile-name"><?= safeEcho($_SESSION['username']) ?></div>
+                            <div class="admin-profile-role">
+                                <i class="bi bi-shield text-primary"></i> Молодший адміністратор
+                            </div>
+
+                            <div class="admin-profile-stats">
+                                <div class="admin-profile-stat">
+                                    <div class="admin-profile-stat-value"><?= $myStats['total_orders'] ?? 0 ?></div>
+                                    <div class="admin-profile-stat-label">Замовлень</div>
+                                </div>
+                                <div class="admin-profile-stat">
+                                    <div class="admin-profile-stat-value"><?= $myStats['completed_orders'] ?? 0 ?></div>
+                                    <div class="admin-profile-stat-label">Завершено</div>
+                                </div>
+                                <div class="admin-profile-stat">
+                                    <div class="admin-profile-stat-value"><?= $myStats['in_progress_orders'] ?? 0 ?></div>
+                                    <div class="admin-profile-stat-label">В роботі</div>
+                                </div>
+                                <div class="admin-profile-stat">
+                                    <div class="admin-profile-stat-value"><?= round($myStats['avg_completion_time'] ?? 0) ?></div>
+                                    <div class="admin-profile-stat-label">Год. на замовл.</div>
+                                </div>
+                                <div class="admin-profile-stat">
+                                    <div class="admin-profile-stat-value">
+                                        <?= $myStats['total_orders'] > 0
+                                            ? round(($myStats['completed_orders'] / $myStats['total_orders']) * 100)
+                                            : 0 ?>%
+                                    </div>
+                                    <div class="admin-profile-stat-label">Ефективність</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Статистика швидкості виконання -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3 class="card-title">Швидкість виконання</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon stat-icon-2">
+                                    <i class="bi bi-lightning"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number">
+                                        <?= isset($myStats['min_completion_time']) ? round($myStats['min_completion_time']) : 0 ?>
+                                    </div>
+                                    <div class="stat-label">Найшвидше виконання (год)</div>
+                                </div>
+                            </div>
+
+                            <div class="stat-card">
+                                <div class="stat-icon stat-icon-3">
+                                    <i class="bi bi-clock"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number">
+                                        <?= isset($myStats['avg_completion_time']) ? round($myStats['avg_completion_time']) : 0 ?>
+                                    </div>
+                                    <div class="stat-label">Середній час (год)</div>
+                                </div>
+                            </div>
+
+                            <div class="stat-card">
+                                <div class="stat-icon stat-icon-4">
+                                    <i class="bi bi-hourglass"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number">
+                                        <?= isset($myStats['max_completion_time']) ? round($myStats['max_completion_time']) : 0 ?>
+                                    </div>
+                                    <div class="stat-label">Найдовше виконання (год)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Графік активності за період -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3 class="card-title">Моя активність за період</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <div id="myActivityChart"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Розподіл за категоріями -->
+                <?php if (!empty($myCategoryStats)): ?>
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h3 class="card-title">Розподіл за категоріями</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <div id="myCategoriesChart"></div>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            <?php else: ?>
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="bi bi-person-x"></i>
+                    </div>
+                    <div class="empty-state-text">Ви ще не маєте статистики за вибраний період</div>
+                </div>
+            <?php endif; ?>
+        </section>
+    <?php endif; ?>
+
     <!-- Секція користувачів (тільки для адмінів) -->
     <?php if ($_SESSION['role'] === 'admin'): ?>
         <section id="users" class="fade-in" style="display: <?= $activeSection === 'users' ? 'block' : 'none' ?>;">
@@ -3732,123 +4190,123 @@ if (isset($_GET['id'])) {
 
     <!-- Секція логів (тільки для адмінів) -->
     <?php if ($_SESSION['role'] === 'admin'): ?>
-        <section id="logs" class="fade-in" style="display: <?= $activeSection === 'logs' ? 'block' : 'none' ?>;">
-            <h2 class="section-title mb-4">
-                <i class="bi bi-journal-text text-primary"></i> Системні логи
-            </h2>
+    <section id="logs" class="fade-in" style="display: <?= $activeSection === 'logs' ? 'block' : 'none' ?>;">
+        <h2 class="section-title mb-4">
+            <i class="bi bi-journal-text text-primary"></i> Системні логи
+        </h2>
 
-            <!-- Фільтри логів -->
-            <form method="GET" class="filters">
-                <input type="hidden" name="section" value="logs">
+        <!-- Фільтри логів -->
+        <form method="GET" class="filters">
+            <input type="hidden" name="section" value="logs">
 
-                <div class="filter-group">
-                    <label for="log-user">Користувач</label>
-                    <input type="text" id="log-user" name="log_user" class="form-control"
-                           placeholder="Фільтр за користувачем"
-                           value="<?= htmlspecialchars($logUser) ?>">
-                </div>
+            <div class="filter-group">
+                <label for="log-user">Користувач</label>
+                <input type="text" id="log-user" name="log_user" class="form-control"
+                       placeholder="Фільтр за користувачем"
+                       value="<?= htmlspecialchars($logUser) ?>">
+            </div>
 
-                <div class="filter-group">
-                    <label for="log-date">Дата</label>
-                    <input type="date" id="log-date" name="log_date" class="form-control"
-                           value="<?= htmlspecialchars($logDate) ?>">
-                </div>
+            <div class="filter-group">
+                <label for="log-date">Дата</label>
+                <input type="date" id="log-date" name="log_date" class="form-control"
+                       value="<?= htmlspecialchars($logDate) ?>">
+            </div>
 
-                <div class="filter-group">
-                    <label for="log-action">Дія</label>
-                    <input type="text" id="log-action" name="log_action" class="form-control"
-                           placeholder="Фільтр за діями"
-                           value="<?= htmlspecialchars($logAction) ?>">
-                </div>
+            <div class="filter-group">
+                <label for="log-action">Дія</label>
+                <input type="text" id="log-action" name="log_action" class="form-control"
+                       placeholder="Фільтр за діями"
+                       value="<?= htmlspecialchars($logAction) ?>">
+            </div>
 
-                <div class="filter-group d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary btn-with-icon">
-                        <i class="bi bi-funnel"></i> Фільтрувати
-                    </button>
-                </div>
+            <div class="filter-group d-flex align-items-end">
+                <button type="submit" class="btn btn-primary btn-with-icon">
+                    <i class="bi bi-funnel"></i> Фільтрувати
+                </button>
+            </div>
 
-                <?php if (!empty($logUser) || !empty($logDate) || !empty($logAction)): ?>
-                    <div class="filter-actions">
-                        <a href="?section=logs" class="btn btn-sm btn-with-icon">
-                            <i class="bi bi-x-circle"></i> Очистити фільтри
-                        </a>
-                    </div>
-                <?php endif; ?>
-            </form>
-
-            <!-- Таблиця логів -->
-            <?php if (!empty($logs)): ?>
-                <div class="card mt-4">
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                <tr>
-                                    <th>Дата та час</th>
-                                    <th>Користувач</th>
-                                    <th>Дія</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                <?php foreach ($logs as $log): ?>
-                                    <tr>
-                                        <td><?= htmlspecialchars($log['created_at']) ?></td>
-                                        <td>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <?php if ($log['role'] === 'admin'): ?>
-                                                    <i class="bi bi-shield-lock-fill text-danger"></i>
-                                                <?php elseif ($log['role'] === 'junior_admin'): ?>
-                                                    <i class="bi bi-shield text-primary"></i>
-                                                <?php else: ?>
-                                                    <i class="bi bi-person text-secondary"></i>
-                                                <?php endif; ?>
-
-                                                <span><?= htmlspecialchars($log['username']) ?></span>
-
-                                                <?php if (isset($log['role'])): ?>
-                                                    <?php if ($log['role'] === 'admin'): ?>
-                                                        <span class="badge status-canceled">Адміністратор</span>
-                                                    <?php elseif ($log['role'] === 'junior_admin'): ?>
-                                                        <span class="badge status-in-progress">Мол. Адміністратор</span>
-                                                    <?php else: ?>
-                                                        <span class="badge status-new">Користувач</span>
-                                                    <?php endif; ?>
-                                                <?php endif; ?>
-                                            </div>
-                                        </td>
-                                        <td><?= htmlspecialchars($log['action']) ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Пагінація логів -->
-                <?php if ($totalPages > 1): ?>
-                    <div class="pagination mt-4">
-                        <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                            <?php
-                            $queryParams = $_GET;
-                            $queryParams['log_page'] = $i;
-                            $queryString = http_build_query($queryParams);
-                            ?>
-                            <a href="?<?= $queryString ?>" class="pagination-link <?= $i == $logPage ? 'active' : '' ?>">
-                                <?= $i ?>
-                            </a>
-                        <?php endfor; ?>
-                    </div>
-                <?php endif; ?>
-            <?php else: ?>
-                <div class="empty-state mt-4">
-                    <div class="empty-state-icon">
-                        <i class="bi bi-journal-x"></i>
-                    </div>
-                    <div class="empty-state-text">Логи не знайдено</div>
+            <?php if (!empty($logUser) || !empty($logDate) || !empty($logAction)): ?>
+                <div class="filter-actions">
+                    <a href="?section=logs" class="btn btn-sm btn-with-icon">
+                        <i class="bi bi-x-circle"></i> Очистити фільтри
+                    </a>
                 </div>
             <?php endif; ?>
-        </section>
+        </form>
+
+        <!-- Таблиця логів -->
+        <?php if (!empty($logs)): ?>
+        <div class="card mt-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                        <tr>
+                            <th>Дата та час</th>
+                            <th>Користувач</th>
+                            <th>Дія</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($logs as $log): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($log['created_at']) ?></td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <?php if ($log['role'] === 'admin'): ?>
+                                            <i class="bi bi-shield-lock-fill text-danger"></i>
+                                        <?php elseif ($log['role'] === 'junior_admin'): ?>
+                                            <i class="bi bi-shield text-primary"></i>
+                                        <?php else: ?>
+                                            <i class="bi bi-person text-secondary"></i>
+                                        <?php endif; ?>
+
+                                        <span><?= htmlspecialchars($log['username']) ?></span>
+
+                                        <?php if (isset($log['role'])): ?>
+                                            <?php if ($log['role'] === 'admin'): ?>
+                                                <span class="badge status-canceled">Адміністратор</span>
+                                            <?php elseif ($log['role'] === 'junior_admin'): ?>
+                                                <span class="badge status-in-progress">Мол. Адміністратор</span>
+                                            <?php else: ?>
+                                                <span class="badge status-new">Користувач</span>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td><?= htmlspecialchars($log['action']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+            <!-- Пагінація логів -->
+            <?php if ($totalPages > 1): ?>
+                <div class="pagination mt-4">
+                    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                        <?php
+                        $queryParams = $_GET;
+                        $queryParams['log_page'] = $i;
+                        $queryString = http_build_query($queryParams);
+                        ?>
+                        <a href="?<?= $queryString ?>" class="pagination-link <?= $i == $logPage ? 'active' : '' ?>">
+                            <?= $i ?>
+                        </a>
+                    <?php endfor; ?>
+                </div>
+            <?php endif; ?>
+        <?php else: ?>
+            <div class="empty-state mt-4">
+                <div class="empty-state-icon">
+                    <i class="bi bi-journal-x"></i>
+                </div>
+                <div class="empty-state-text">Логи не знайдено</div>
+            </div>
+        <?php endif; ?>
+    </section>
     <?php endif; ?>
 </div>
 
@@ -3929,78 +4387,45 @@ if (isset($_GET['id'])) {
         updateCurrentTime();
         setInterval(updateCurrentTime, 1000);
 
-        // Модальне вікно для додавання користувача
-        const addUserBtn = document.getElementById('addUserBtn');
-        if (addUserBtn) {
-            const modalHTML = `
-                <div class="modal" id="addUserModal" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title">Додати нового користувача</h5>
-                                <button type="button" class="modal-close" data-dismiss="modal" aria-label="Close">×</button>
-                            </div>
-                            <div class="modal-body">
-                                <form id="addUserForm" method="POST" action="add_user.php">
-                                    <input type="hidden" name="csrf_token" value="${document.querySelector('input[name="csrf_token"]').value}">
+        // Функції для завантаження файлів
+        const addFileBtn = document.getElementById('addFileBtn');
+        const fileUploadForm = document.getElementById('fileUploadForm');
 
-                                    <div class="form-group">
-                                        <label for="new-username">Логін</label>
-                                        <input type="text" id="new-username" name="username" class="form-control" required>
-                                    </div>
+        if (addFileBtn && fileUploadForm) {
+            addFileBtn.addEventListener('click', function() {
+                fileUploadForm.style.display = fileUploadForm.style.display === 'none' ? 'block' : 'none';
+            });
 
-                                    <div class="form-group">
-                                        <label for="new-password">Пароль</label>
-                                        <input type="password" id="new-password" name="password" class="form-control" required>
-                                    </div>
+            // Відображення назви вибраного файлу
+            const fileInput = document.getElementById('file-upload');
+            const fileNameDisplay = document.getElementById('file-selected-name');
 
-                                    <div class="form-group">
-                                        <label for="new-role">Роль</label>
-                                        <select id="new-role" name="role" class="form-control">
-                                            <option value="user">Користувач</option>
-                                            <option value="junior_admin">Молодший адмін</option>
-                                            <option value="admin">Адміністратор</option>
-                                        </select>
-                                    </div>
-                                </form>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Скасувати</button>
-                                <button type="submit" form="addUserForm" class="btn btn-primary">Додати</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // Додаємо модальне вікно в DOM
-            if (!document.getElementById('addUserModal')) {
-                document.body.insertAdjacentHTML('beforeend', modalHTML);
-
-                const modal = document.getElementById('addUserModal');
-
-                // Функція для відкриття модального вікна
-                addUserBtn.addEventListener('click', function() {
-                    modal.style.display = 'block';
-                    modal.classList.add('show');
-                });
-
-                // Функція для закриття модального вікна
-                document.querySelectorAll('[data-dismiss="modal"]').forEach(closeBtn => {
-                    closeBtn.addEventListener('click', function() {
-                        modal.style.display = 'none';
-                        modal.classList.remove('show');
-                    });
-                });
-
-                // Закриття при кліку поза модальним вікном
-                window.addEventListener('click', function(event) {
-                    if (event.target === modal) {
-                        modal.style.display = 'none';
-                        modal.classList.remove('show');
+            if (fileInput && fileNameDisplay) {
+                fileInput.addEventListener('change', function() {
+                    if (this.files.length > 0) {
+                        fileNameDisplay.textContent = 'Вибрано: ' + this.files[0].name;
+                    } else {
+                        fileNameDisplay.textContent = '';
                     }
                 });
             }
+        }
+
+        // Функції для зміни відповідального
+        const changeHandlerBtn = document.getElementById('changeHandlerBtn');
+        const handlerDropdown = document.getElementById('handlerDropdown');
+
+        if (changeHandlerBtn && handlerDropdown) {
+            changeHandlerBtn.addEventListener('click', function() {
+                handlerDropdown.style.display = handlerDropdown.style.display === 'none' ? 'block' : 'none';
+            });
+
+            // Закрити дропдаун при кліку поза ним
+            document.addEventListener('click', function(event) {
+                if (!changeHandlerBtn.contains(event.target) && !handlerDropdown.contains(event.target)) {
+                    handlerDropdown.style.display = 'none';
+                }
+            });
         }
 
         // Функції для керування користувачами
@@ -4336,6 +4761,83 @@ if (isset($_GET['id'])) {
                 window.adminComparisonChart = adminComparisonChart;
             }
 
+            // Графік порівняння часу виконання адміністраторами
+            const adminTimeComparisonChartElement = document.getElementById('adminTimeComparisonChart');
+            if (adminTimeComparisonChartElement) {
+                const adminNames = [];
+                const adminAvgTimes = [];
+                const adminMinTimes = [];
+                const adminMaxTimes = [];
+
+                <?php foreach ($adminStats as $admin): ?>
+                adminNames.push('<?= safeEcho($admin['username']) ?>');
+                adminAvgTimes.push(<?= round($admin['avg_completion_time'] ?? 0) ?>);
+                adminMinTimes.push(<?= round($admin['min_completion_time'] ?? 0) ?>);
+                adminMaxTimes.push(<?= round($admin['max_completion_time'] ?? 0) ?>);
+                <?php endforeach; ?>
+
+                const adminTimeComparisonChart = new ApexCharts(adminTimeComparisonChartElement, {
+                    chart: {
+                        type: 'bar',
+                        height: 350,
+                        toolbar: {
+                            show: true
+                        }
+                    },
+                    theme: {
+                        mode: currentTheme
+                    },
+                    series: [{
+                        name: 'Мін. час (год)',
+                        data: adminMinTimes
+                    }, {
+                        name: 'Сер. час (год)',
+                        data: adminAvgTimes
+                    }, {
+                        name: 'Макс. час (год)',
+                        data: adminMaxTimes
+                    }],
+                    xaxis: {
+                        categories: adminNames,
+                        labels: {
+                            style: {
+                                colors: currentTheme === 'dark' ? '#a0aec0' : '#6c757d'
+                            }
+                        }
+                    },
+                    plotOptions: {
+                        bar: {
+                            horizontal: false,
+                            columnWidth: '55%',
+                            endingShape: 'rounded'
+                        }
+                    },
+                    dataLabels: {
+                        enabled: false
+                    },
+                    stroke: {
+                        show: true,
+                        width: 2,
+                        colors: ['transparent']
+                    },
+                    colors: ['#2ecc71', '#3498db', '#e74c3c'],
+                    fill: {
+                        opacity: 1
+                    },
+                    tooltip: {
+                        y: {
+                            formatter: function(val) {
+                                return val + " годин";
+                            }
+                        }
+                    }
+                });
+                adminTimeComparisonChart.render();
+
+                // Зберігаємо посилання на графік для оновлення теми
+                window.adminTimeComparisonChart = adminTimeComparisonChart;
+            }
+
             // Графік активності адміна
             const adminActivityChartElement = document.getElementById('adminActivityChart');
             if (adminActivityChartElement) {
@@ -4445,13 +4947,132 @@ if (isset($_GET['id'])) {
                 // Зберігаємо посилання на графік для оновлення теми
                 window.adminCategoriesChart = adminCategoriesChart;
             }
+
+            // Графіки для молодшого адміна
+            const myActivityChartElement = document.getElementById('myActivityChart');
+            if (myActivityChartElement) {
+                const myDailyLabels = [];
+                const myDailyValues = [];
+                const myDailyCompleted = [];
+
+                <?php if (isset($myDailyLabels) && isset($myDailyValues)): ?>
+                <?php foreach ($myDailyLabels as $label): ?>
+                myDailyLabels.push('<?= $label ?>');
+                <?php endforeach; ?>
+
+                <?php foreach ($myDailyValues as $value): ?>
+                myDailyValues.push(<?= $value ?>);
+                <?php endforeach; ?>
+
+                <?php foreach ($myDailyCompleted as $value): ?>
+                myDailyCompleted.push(<?= $value ?>);
+                <?php endforeach; ?>
+                <?php endif; ?>
+
+                const myActivityChart = new ApexCharts(myActivityChartElement, {
+                    chart: {
+                        type: 'area',
+                        height: 350,
+                        toolbar: {
+                            show: true
+                        }
+                    },
+                    theme: {
+                        mode: currentTheme
+                    },
+                    series: [{
+                        name: 'Всього замовлень',
+                        data: myDailyValues
+                    }, {
+                        name: 'Завершені замовлення',
+                        data: myDailyCompleted
+                    }],
+                    xaxis: {
+                        categories: myDailyLabels,
+                        labels: {
+                            style: {
+                                colors: currentTheme === 'dark' ? '#a0aec0' : '#6c757d'
+                            }
+                        }
+                    },
+                    stroke: {
+                        curve: 'smooth',
+                        width: 3
+                    },
+                    fill: {
+                        type: 'gradient',
+                        gradient: {
+                            shadeIntensity: 1,
+                            opacityFrom: 0.7,
+                            opacityTo: 0.3
+                        }
+                    },
+                    markers: {
+                        size: 4
+                    },
+                    colors: ['#3498db', '#2ecc71']
+                });
+                myActivityChart.render();
+
+                // Зберігаємо посилання на графік для оновлення теми
+                window.myActivityChart = myActivityChart;
+            }
+
+            // Графік категорій для молодшого адміна
+            const myCategoriesChartElement = document.getElementById('myCategoriesChart');
+            if (myCategoriesChartElement) {
+                const myCategoryNames = [];
+                const myCategoryCounts = [];
+
+                <?php if (isset($myCategoryStats)): ?>
+                <?php foreach ($myCategoryStats as $category): ?>
+                myCategoryNames.push('<?= safeEcho($category['category']) ?>');
+                myCategoryCounts.push(<?= $category['count'] ?>);
+                <?php endforeach; ?>
+                <?php endif; ?>
+
+                const myCategoriesChart = new ApexCharts(myCategoriesChartElement, {
+                    chart: {
+                        type: 'donut',
+                        height: 350
+                    },
+                    theme: {
+                        mode: currentTheme
+                    },
+                    series: myCategoryCounts,
+                    labels: myCategoryNames,
+                    colors: ['#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e74c3c', '#34495e', '#16a085', '#27ae60', '#d35400'],
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            colors: currentTheme === 'dark' ? '#e2e8f0' : '#333333'
+                        }
+                    },
+                    responsive: [{
+                        breakpoint: 480,
+                        options: {
+                            chart: {
+                                width: 300
+                            },
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }]
+                });
+                myCategoriesChart.render();
+
+                // Зберігаємо посилання на графік для оновлення теми
+                window.myCategoriesChart = myCategoriesChart;
+            }
         }
 
         // Функція для оновлення теми графіків
         function updateCharts(theme) {
             const charts = [
                 'ordersChart', 'ordersTypesChart', 'weekdayChart', 'categoriesChart',
-                'adminComparisonChart', 'adminActivityChart', 'adminCategoriesChart'
+                'adminComparisonChart', 'adminTimeComparisonChart', 'adminActivityChart', 'adminCategoriesChart',
+                'myActivityChart', 'myCategoriesChart'
             ];
 
             charts.forEach(chartName => {

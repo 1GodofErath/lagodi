@@ -1024,7 +1024,7 @@ function getDayText($days) {
         <div class="content-wrapper">
             <div class="section-container">
                 <div class="profile-container">
-                    <!-- Ліва колонка - картка профілю -->
+                    
                     <div class="user-profile-card">
                         <div class="user-profile-avatar">
                             <?php if(isset($user['profile_pic']) && !empty($user['profile_pic'])): ?>

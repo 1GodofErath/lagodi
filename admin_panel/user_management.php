@@ -2,6 +2,16 @@
 // Вилучаємо session_start(), оскільки сесія вже запущена в admin_dashboard.php
 // session_start();
 
+// Функція для логування дій
+function logUserAction($conn, $action) {
+    if (isset($_SESSION['user_id'])) {
+        $logQuery = "INSERT INTO logs (user_id, action, created_at) VALUES (?, ?, NOW())";
+        $logStmt = $conn->prepare($logQuery);
+        $logStmt->bind_param("is", $_SESSION['user_id'], $action);
+        $logStmt->execute();
+    }
+}
+
 // Перевірка прав доступу - тільки адміністратори можуть керувати користувачами
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     echo '<div class="alert alert-danger">У вас недостатньо прав для доступу до цієї сторінки</div>';
@@ -53,6 +63,9 @@ try {
     $stmt->execute();
     $result = $stmt->get_result();
     $users = $result->fetch_all(MYSQLI_ASSOC);
+
+    // Логуємо перегляд сторінки користувачів
+    logUserAction($conn, "Переглянув список користувачів");
 } catch (Exception $e) {
     $errorMessage = "Помилка отримання користувачів: " . $e->getMessage();
 }
@@ -121,11 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_user'])) {
 
         if ($stmt->affected_rows > 0) {
             // Запис в лог
-            $logStmt = $conn->prepare("INSERT INTO logs (user_id, action, created_at) VALUES (?, ?, NOW())");
-            $userId = $_SESSION['user_id'];
-            $action = "Додано нового користувача: {$username} (роль: {$role})";
-            $logStmt->bind_param("is", $userId, $action);
-            $logStmt->execute();
+            logUserAction($conn, "Додано нового користувача: {$username} (роль: {$role})");
 
             // Записуємо повідомлення про успіх та перенаправляємо
             $_SESSION['success_message'] = "Користувача {$username} успішно додано";
@@ -170,6 +179,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
         // Хешування пароля
         $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
 
+        // Отримуємо ім'я користувача для логу
+        $userStmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
+        $userStmt->bind_param("i", $userId);
+        $userStmt->execute();
+        $userResult = $userStmt->get_result();
+        $username = $userResult->fetch_assoc()['username'] ?? 'невідомий';
+
         // Оновлення пароля
         $updateStmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
         $updateStmt->bind_param("si", $hashedPassword, $userId);
@@ -177,11 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
 
         if ($updateStmt->affected_rows > 0) {
             // Запис в лог
-            $logStmt = $conn->prepare("INSERT INTO logs (user_id, action, created_at) VALUES (?, ?, NOW())");
-            $adminId = $_SESSION['user_id'];
-            $action = "Змінено пароль для користувача з ID: {$userId}";
-            $logStmt->bind_param("is", $adminId, $action);
-            $logStmt->execute();
+            logUserAction($conn, "Змінено пароль для користувача: {$username} (ID: {$userId})");
 
             $_SESSION['success_message'] = "Пароль успішно змінено";
             echo "<script>window.location.href = 'admin_dashboard.php?section=users';</script>";
@@ -246,14 +258,14 @@ if (isset($_SESSION['success_message'])) {
     </div>
 
     <div class="filter-group d-flex align-items-end">
-        <button type="submit" class="btn btn-primary btn-with-icon btn-xs">
+        <button type="submit" class="btn btn-primary btn-with-icon btn-sm">
             <i class="bi bi-search"></i> Пошук
         </button>
     </div>
 
     <?php if (!empty($userSearch) || !empty($userIdSearch)): ?>
         <div class="filter-actions">
-            <a href="?section=users" class="btn btn-xs btn-with-icon">
+            <a href="?section=users" class="btn btn-sm btn-with-icon">
                 <i class="bi bi-x-circle"></i> Очистити пошук
             </a>
         </div>
@@ -319,11 +331,11 @@ if (isset($_SESSION['success_message'])) {
                             </select>
                         </div>
 
-                        <div>
-                            <button type="submit" class="btn btn-primary btn-with-icon btn-xs">
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="submit" class="btn btn-primary btn-with-icon btn-sm">
                                 <i class="bi bi-check-circle"></i> Оновити
                             </button>
-                            <button type="button" class="btn btn-info btn-with-icon btn-xs"
+                            <button type="button" class="btn btn-info btn-with-icon btn-sm"
                                     onclick="showChangePasswordModal(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')">
                                 <i class="bi bi-key"></i> Змінити пароль
                             </button>
@@ -337,12 +349,12 @@ if (isset($_SESSION['success_message'])) {
                                 <div><strong>Причина:</strong> <?= htmlspecialchars($user['block_reason']) ?></div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-success btn-with-icon btn-xs mt-2" onclick="unblockUser(<?= $user['id'] ?>)">
+                        <button type="button" class="btn btn-success btn-with-icon btn-sm mt-2" onclick="unblockUser(<?= $user['id'] ?>)">
                             <i class="bi bi-unlock"></i> Розблокувати
                         </button>
                     <?php else: ?>
                         <div class="mt-3">
-                            <button type="button" class="btn btn-warning btn-with-icon btn-xs" onclick="toggleBlockForm(<?= $user['id'] ?>)">
+                            <button type="button" class="btn btn-warning btn-with-icon btn-sm" onclick="toggleBlockForm(<?= $user['id'] ?>)">
                                 <i class="bi bi-lock"></i> Заблокувати
                             </button>
                         </div>
@@ -362,10 +374,10 @@ if (isset($_SESSION['success_message'])) {
                                 </div>
 
                                 <div>
-                                    <button type="submit" class="btn btn-danger btn-with-icon btn-xs">
+                                    <button type="submit" class="btn btn-danger btn-with-icon btn-sm">
                                         <i class="bi bi-lock-fill"></i> Заблокувати
                                     </button>
-                                    <button type="button" class="btn btn-secondary btn-with-icon btn-xs ml-2" onclick="toggleBlockForm(<?= $user['id'] ?>)">
+                                    <button type="button" class="btn btn-secondary btn-with-icon btn-sm ml-2" onclick="toggleBlockForm(<?= $user['id'] ?>)">
                                         <i class="bi bi-x"></i> Скасувати
                                     </button>
                                 </div>
@@ -374,7 +386,7 @@ if (isset($_SESSION['success_message'])) {
                     <?php endif; ?>
                 </div>
                 <div class="card-footer">
-                    <button type="button" class="btn btn-danger btn-with-icon btn-xs" onclick="confirmDelete(<?= $user['id'] ?>)">
+                    <button type="button" class="btn btn-danger btn-with-icon btn-sm" onclick="confirmDelete(<?= $user['id'] ?>)">
                         <i class="bi bi-trash"></i> Видалити
                     </button>
                 </div>
@@ -462,8 +474,10 @@ if (isset($_SESSION['success_message'])) {
                     </div>
 
                     <div class="modal-footer mt-3">
-                        <button type="button" class="btn btn-secondary btn-xs" data-dismiss="modal">Скасувати</button>
-                        <button type="submit" class="btn btn-primary btn-sm">Додати</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Скасувати</button>
+                        <button type="submit" class="btn btn-primary btn-with-icon btn-sm">
+                            <i class="bi bi-person-plus"></i> Додати
+                        </button>
                     </div>
                 </form>
             </div>
@@ -515,8 +529,10 @@ if (isset($_SESSION['success_message'])) {
                     </div>
 
                     <div class="modal-footer mt-3">
-                        <button type="button" class="btn btn-secondary btn-xs" data-dismiss="modal">Скасувати</button>
-                        <button type="submit" class="btn btn-primary btn-sm">Змінити пароль</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Скасувати</button>
+                        <button type="submit" class="btn btn-primary btn-with-icon btn-sm">
+                            <i class="bi bi-key"></i> Змінити пароль
+                        </button>
                     </div>
                 </form>
             </div>
@@ -538,6 +554,35 @@ if (isset($_SESSION['success_message'])) {
 
     .modal {
         z-index: 1050 !important; /* Підвищуємо z-index модалок */
+    }
+
+    /* Покращений дизайн модального вікна */
+    .modal-dialog {
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        border-radius: 12px;
+    }
+
+    .modal-content {
+        border: none;
+    }
+
+    .modal-header {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .modal-title {
+        font-weight: 600;
+        color: white;
+    }
+
+    .modal-close {
+        color: white;
+        opacity: 0.8;
+    }
+
+    .modal-close:hover {
+        opacity: 1;
     }
 
     .password-strength-meter .progress {
@@ -613,6 +658,64 @@ if (isset($_SESSION['success_message'])) {
     .btn-lg {
         padding: 0.75rem 1.5rem;
         font-size: 1.25rem;
+    }
+
+    /* Покращені стилі для карток користувачів */
+    .card {
+        transition: all 0.3s ease;
+        overflow: hidden;
+    }
+
+    .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+
+    .card-header {
+        position: relative;
+    }
+
+    .card-header .badge {
+        position: relative;
+        top: 0;
+        right: 0;
+        transition: all 0.3s ease;
+    }
+
+    .card-header .badge:hover {
+        transform: scale(1.1);
+    }
+
+    /* Компактніший профіль користувача */
+    .card-body {
+        padding: 15px;
+    }
+
+    .form-group {
+        margin-bottom: 10px;
+    }
+
+    /* Кращий дизайн для кнопок дій */
+    .card-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 15px;
+    }
+
+    .btn-with-icon {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.2s ease;
+    }
+
+    .btn-with-icon:hover {
+        transform: translateY(-2px);
+    }
+
+    .btn-with-icon i {
+        font-size: 1em;
     }
 </style>
 
@@ -912,6 +1015,20 @@ if (isset($_SESSION['success_message'])) {
             }
         };
 
+        // Додавання анімацій для карток
+        const cards = document.querySelectorAll('.card');
+        cards.forEach(card => {
+            card.addEventListener('mouseover', function() {
+                this.style.transform = 'translateY(-5px)';
+                this.style.boxShadow = '0 10px 20px rgba(0,0,0,0.1)';
+            });
+
+            card.addEventListener('mouseout', function() {
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+            });
+        });
+
         // Ініціалізація всіх компонентів
         setupAddUserModal();
         setupCloseModalButtons();
@@ -938,7 +1055,7 @@ if (isset($_SESSION['success_message'])) {
             const element = originalCreateElement.call(document, tagName);
             if (tagName.toLowerCase() === 'div' && element.className === 'modal-backdrop') {
                 // Видалити position: fixed, якщо це буде додано
-                setTimeout(functioм n() {
+                setTimeout(function() {
                     if (element.style.position === 'fixed') {
                         element.style.position = '';
                     }
